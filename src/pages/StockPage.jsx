@@ -420,12 +420,15 @@ export default function StockPage() {
     setCreateModal({
       itemname: defaults.itemname || '',
       availablestock: defaults.availablestock ?? '',
+      newqty: defaults.newqty ?? '',
       threshold: defaults.threshold ?? '',
       unit: defaults.unit || '',
       manufacturer: defaults.manufacturer || '',
       barcodeprodid: defaults.barcodeprodid ?? '',
-      inventorycode: defaults.inventorycode ?? 1,
+      siteid: defaults.siteid ?? defaults.inventorycode ?? 1,
+      inventorycode: defaults.inventorycode ?? defaults.siteid ?? 1,
       existingStock: defaults.existingStock ?? null,
+      selectedExistingItem: Boolean(defaults.existingStock),
       infoMessage: defaults.infoMessage ?? '',
       error: '',
       fieldError: '',
@@ -471,10 +474,13 @@ export default function StockPage() {
         openCreateModal({
           itemname: existingWithRowKey.itemname || '',
           availablestock: '',
+          newqty: '',
           threshold: existingWithRowKey.threshold ?? '',
           barcodeprodid: existingWithRowKey.barcodeprodid || barcodeValue,
+          siteid: existingWithRowKey.inventorycode ?? 1,
           inventorycode: existingWithRowKey.inventorycode ?? 1,
           existingStock: existingWithRowKey,
+          selectedExistingItem: true,
           infoMessage: `Item exists with ${existingWithRowKey.siteqty ?? existingWithRowKey.availablestock ?? 0} units. Enter quantity to add to stock.`
         });
         showToast('Existing stock found. Enter qty to add to current stock.');
@@ -642,41 +648,49 @@ export default function StockPage() {
     showToast(`Updated to table: invalidated ${qty} unit(s) for ${stock.itemname || 'selected item'}.`);
   };
 
+  const getMatchingSiteStock = (itemName, siteId) => {
+    const normalizedName = (itemName || '').trim().toLowerCase();
+    const normalizedSiteId = Number(siteId);
+
+    if (!normalizedName || !Number.isFinite(normalizedSiteId) || normalizedSiteId <= 0) {
+      return null;
+    }
+
+    return stocks.find((stock) =>
+      (stock.itemname || '').trim().toLowerCase() === normalizedName &&
+      Number(stock.inventorycode) === normalizedSiteId
+    );
+  };
+
   const handleCreateChange = (field, value) => {
     setCreateModal((prev) => {
       if (!prev) return prev;
+
+      if (field === 'itemname' || field === 'siteid') {
+        const nextItemName = field === 'itemname' ? value : prev.itemname;
+        const nextSiteId = field === 'siteid' ? value : prev.siteid;
+        const matchedSiteStock = getMatchingSiteStock(nextItemName, nextSiteId);
+        const hasBothFieldsSelected = Boolean((nextItemName || '').trim()) && Boolean(nextSiteId && nextSiteId !== '');
+
+        return {
+          ...prev,
+          [field]: value,
+          selectedExistingItem: hasBothFieldsSelected && Boolean(matchedSiteStock),
+          availablestock: hasBothFieldsSelected && matchedSiteStock ? String(matchedSiteStock.siteqty ?? '') : prev.availablestock,
+          threshold: hasBothFieldsSelected && matchedSiteStock ? String(matchedSiteStock.threshold ?? '') : prev.threshold,
+          unit: hasBothFieldsSelected && matchedSiteStock ? matchedSiteStock.unit || '' : prev.unit,
+          manufacturer: hasBothFieldsSelected && matchedSiteStock ? matchedSiteStock.manufacturer || '' : prev.manufacturer,
+          barcodeprodid: hasBothFieldsSelected && matchedSiteStock ? matchedSiteStock.barcodeprodid || prev.barcodeprodid : prev.barcodeprodid,
+          inventorycode: hasBothFieldsSelected && matchedSiteStock ? matchedSiteStock.inventorycode ?? 1 : prev.inventorycode,
+          showSuggestions: field === 'itemname' ? (value || '').trim().length > 0 : prev.showSuggestions,
+          error: ''
+        };
+      }
+
       const next = { ...prev, [field]: value, error: '' };
       if (field === 'availablestock') {
         next.fieldError = '';
       }
-
-      if (field === 'itemname') {
-        const normalized = value?.trim().toLowerCase();
-        if (!normalized || normalized.length < 2) {
-          next.showSuggestions = false;
-          next.existingStock = null;
-          next.infoMessage = '';
-          return next;
-        }
-
-        const matchingStock = stocks.find((stock) => (stock.itemname || '').toLowerCase() === normalized && Number(stock.inventorycode) === 1);
-        next.showSuggestions = !matchingStock;
-
-        if (matchingStock) {
-          next.existingStock = matchingStock;
-          next.infoMessage = `Item exists in stock with ${matchingStock.siteqty ?? matchingStock.availablestock ?? 0} units. Enter quantity to add to stock.`;
-          next.availablestock = '';
-          next.threshold = matchingStock.threshold ?? '';
-          next.unit = matchingStock.unit ?? '';
-          next.manufacturer = matchingStock.manufacturer ?? '';
-          next.barcodeprodid = matchingStock.barcodeprodid || '';
-          next.inventorycode = matchingStock.inventorycode ?? 1;
-        } else {
-          next.existingStock = null;
-          next.infoMessage = '';
-        }
-      }
-
       return next;
     });
   };
@@ -685,26 +699,38 @@ export default function StockPage() {
     if (!createModal) return;
 
     const itemname = createModal.itemname.trim();
-    const availablestock = Number(createModal.availablestock);
-    const threshold = Number(createModal.threshold);
+    const requestedQty = Number(createModal.newqty);
+    const selectedExistingItem = Boolean(createModal.selectedExistingItem);
+    const quantityToApply = Number.isFinite(requestedQty) && requestedQty > 0 ? requestedQty : null;
+    const thresholdValue = createModal.threshold.toString().trim();
+    const threshold = thresholdValue === '' ? null : Number(thresholdValue);
     const unit = (createModal.unit || '').toString().trim();
+    const manufacturer = (createModal.manufacturer || '').toString().trim();
+    const selectedSiteIdValue = (createModal.siteid ?? '').toString().trim();
+    const selectedSiteId = selectedSiteIdValue === '' ? null : Number(selectedSiteIdValue);
 
     if (!itemname) {
       setCreateModal((prev) => (prev ? { ...prev, error: 'Item name is required.' } : prev));
       return;
     }
-    if (!createModal.availablestock || createModal.availablestock.toString().trim() === '') {
-      setCreateModal((prev) => (prev ? { ...prev, error: 'Qty to add up is required.', fieldError: 'availablestock' } : prev));
-      showToast('Please enter Qty to add up.', 'error');
+    if (!selectedSiteId || Number.isNaN(selectedSiteId) || selectedSiteId <= 0) {
+      setCreateModal((prev) => (prev ? { ...prev, error: 'Please select a site.' } : prev));
       return;
     }
-    if (!Number.isFinite(availablestock) || availablestock <= 0) {
-      setCreateModal((prev) => (prev ? { ...prev, error: 'Available qty must be a positive number.', fieldError: 'availablestock' } : prev));
-      showToast('Qty to add up must be a positive number.', 'error');
+    if (!quantityToApply || !Number.isFinite(quantityToApply) || quantityToApply <= 0) {
+      setCreateModal((prev) => (prev ? { ...prev, error: 'New qty is required and must be a positive number.' } : prev));
+      return;
+    }
+    if (threshold === null) {
+      setCreateModal((prev) => (prev ? { ...prev, error: 'Threshold is required.' } : prev));
       return;
     }
     if (!Number.isFinite(threshold) || threshold < 0) {
       setCreateModal((prev) => (prev ? { ...prev, error: 'Threshold must be zero or a positive number.' } : prev));
+      return;
+    }
+    if (Number.isFinite(threshold) && !selectedExistingItem && quantityToApply < threshold) {
+      setCreateModal((prev) => (prev ? { ...prev, error: 'Entered qty should not be less than threshold.' } : prev));
       return;
     }
 
@@ -714,64 +740,151 @@ export default function StockPage() {
 
     try {
       const now = new Date().toISOString();
-      if (createModal.existingStock) {
-        const existing = createModal.existingStock;
-        const existingQty = Number(existing.availablestock ?? existing.siteqty ?? 0);
-        const addedQty = availablestock;
-        const newQty = existingQty + addedQty;
-        const stockPayload = {
-          ...existing,
-          itemname,
-          availablestock: newQty,
-          siteqty: newQty,
-          threshold,
-          unit,
-          manufacturer: createModal.manufacturer || existing.manufacturer || '',
-          barcodeprodid: createModal.barcodeprodid || existing.barcodeprodid || '',
-          inventorycode: existing.inventorycode,
-          stockstatus: newQty > 0 ? 'In Stock' : 'Out of Stock'
-        };
+      const normalizedItemName = (itemname || '').trim().toLowerCase();
+      const matchedStock = stocks.find((stock) => (stock.itemname || '').trim().toLowerCase() === normalizedItemName);
+      const officeSiteStock = stocks.find(
+        (stock) => (stock.itemname || '').trim().toLowerCase() === normalizedItemName && Number(stock.inventorycode) === 1
+      );
+      const selectedSiteStock = stocks.find(
+        (stock) => (stock.itemname || '').trim().toLowerCase() === normalizedItemName && Number(stock.inventorycode) === selectedSiteId
+      );
 
-        const updatedStock = await updateStock(existing.itemcode, existing.inventorycode, stockPayload);
-        await refreshStocksFromApi();
-        setCreateModal(null);
-        showToast(`Added ${addedQty} units to ${itemname}.`);
-        return;
-      }
+      const baseItemCode = matchedStock?.itemcode;
+      const itemCodeToUse = baseItemCode || (await createItemMaster({ itemname }))?.itemid;
 
-      const createdItem = await createItemMaster({ itemname });
-      const createdItemId = createdItem?.itemid;
-      const refreshedItemMasters = await fetchItemMasters();
-      setItemMasters(Array.isArray(refreshedItemMasters) ? refreshedItemMasters : []);
-      const stockPayload = {
-        itemcode: createdItemId,
-        inventorycode: createModal.inventorycode ?? 1,
+      const createBaseStockPayload = (inventoryCode, availableStockValue, siteQtyValue) => ({
+        itemcode: itemCodeToUse,
+        inventorycode: inventoryCode,
         itemname,
-        availablestock,
-        siteqty: availablestock,
+        availablestock: availableStockValue,
+        siteqty: siteQtyValue,
         threshold,
         unit,
-        manufacturer: createModal.manufacturer || '',
-        barcodeprodid: createModal.barcodeprodid || '',
         stockentrydate: now,
-        stockstatus: availablestock > 0 ? 'In Stock' : 'Out of Stock'
-      };
-      const createdStock = await createStock(stockPayload);
+        stockstatus: 'In Stock'
+      });
 
-      const ledgerPayload = {
-        itemcode: createdStock.itemcode,
-        itemname: createdStock.itemname,
-        inventorycode: createdStock.inventorycode,
-        inqty: Number(createdStock.siteqty || 0),
-        openingqty: 0,
-        totalavailableqty: Number(createdStock.siteqty || 0),
-        transactiondate: now,
-        frominventory: null,
-        toinventory: createdStock.inventorycode
-      };
-      await createStockLedger(ledgerPayload);
-      await refreshStocksFromApi();
+      if (selectedSiteId === 1) {
+        if (officeSiteStock) {
+          const updatedAvailableStock = Number(officeSiteStock.availablestock || 0) + quantityToApply;
+          const updatedSiteQty = Number(officeSiteStock.siteqty || 0) + quantityToApply;
+          const updatedThreshold = Number.isFinite(threshold) && threshold >= 0 ? threshold : Number(officeSiteStock.threshold || 0);
+          const updatedUnit = unit || officeSiteStock.unit || '';
 
+          const updatedOfficeStockPayload = {
+            ...officeSiteStock,
+            itemcode: officeSiteStock.itemcode,
+            inventorycode: 1,
+            itemname,
+            availablestock: updatedAvailableStock,
+            siteqty: updatedSiteQty,
+            threshold: updatedThreshold,
+            unit: updatedUnit,
+            stockstatus: updatedAvailableStock > 0 ? 'In Stock' : 'Out of Stock',
+            stockentrydate: officeSiteStock.stockentrydate || now,
+            stockexitdate: officeSiteStock.stockexitdate || null
+          };
+
+          await updateStock(officeSiteStock.itemcode, 1, updatedOfficeStockPayload);
+
+          const ledgerPayload = {
+            itemcode: officeSiteStock.itemcode,
+            itemname,
+            inventorycode: 1,
+            inqty: quantityToApply,
+            openingqty: Number(officeSiteStock.siteqty || 0),
+            totalavailableqty: updatedAvailableStock,
+            unit: updatedUnit,
+            transactiondate: now,
+            frominventory: null,
+            toinventory: 1
+          };
+          await createStockLedger(ledgerPayload);
+        } else {
+          const createdStock = await createStock(createBaseStockPayload(1, quantityToApply, quantityToApply));
+
+          const ledgerPayload = {
+            itemcode: createdStock.itemcode,
+            itemname: createdStock.itemname,
+            inventorycode: createdStock.inventorycode,
+            inqty: Number(createdStock.availablestock || 0),
+            openingqty: 0,
+            totalavailableqty: Number(createdStock.availablestock || 0),
+            unit: createdStock.unit || unit,
+            transactiondate: now,
+            frominventory: null,
+            toinventory: createdStock.inventorycode
+          };
+          await createStockLedger(ledgerPayload);
+        }
+      } else {
+        const shouldUpdateOfficeSite = !selectedSiteStock;
+        let createdOfficeStock = null;
+        let officeLedgerOpening = Number(officeSiteStock?.availablestock || 0);
+        if (shouldUpdateOfficeSite && officeSiteStock) {
+          const updatedAvailableStock = Number(officeSiteStock.availablestock || 0) + quantityToApply;
+          const updatedUnit = unit || officeSiteStock.unit || '';
+
+          const updatedOfficeStockPayload = {
+            ...officeSiteStock,
+            itemcode: officeSiteStock.itemcode,
+            inventorycode: 1,
+            itemname,
+            availablestock: updatedAvailableStock,
+            threshold,
+            unit: updatedUnit,
+            stockstatus: updatedAvailableStock > 0 ? 'In Stock' : 'Out of Stock',
+            stockentrydate: officeSiteStock.stockentrydate || now,
+            stockexitdate: officeSiteStock.stockexitdate || null
+          };
+
+          await updateStock(officeSiteStock.itemcode, 1, updatedOfficeStockPayload);
+          officeLedgerOpening = Number(officeSiteStock.siteqty || 0);
+        } else if (shouldUpdateOfficeSite) {
+          createdOfficeStock = await createStock(createBaseStockPayload(1, quantityToApply, null));
+          officeLedgerOpening = 0;
+        }
+
+        if (selectedSiteStock) {
+          const updatedSiteQty = Number(selectedSiteStock.siteqty || 0) + quantityToApply;
+          const updatedUnit = unit || selectedSiteStock.unit || '';
+
+          const updatedSelectedSiteStockPayload = {
+            ...selectedSiteStock,
+            itemcode: selectedSiteStock.itemcode,
+            inventorycode: selectedSiteId,
+            itemname,
+            siteqty: updatedSiteQty,
+            unit: updatedUnit,
+            stockstatus: updatedSiteQty > 0 ? 'In Stock' : 'Out of Stock',
+            stockentrydate: selectedSiteStock.stockentrydate || now,
+            stockexitdate: selectedSiteStock.stockexitdate || null
+          };
+
+          await updateStock(selectedSiteStock.itemcode, selectedSiteId, updatedSelectedSiteStockPayload);
+        } else {
+          await createStock(createBaseStockPayload(selectedSiteId, null, quantityToApply));
+        }
+
+        const selectedSiteLedgerPayload = {
+          itemcode: (selectedSiteStock || { itemcode: itemCodeToUse }).itemcode,
+          itemname,
+          inventorycode: selectedSiteId,
+          inqty: quantityToApply,
+          openingqty: Number(selectedSiteStock?.siteqty || 0),
+          totalavailableqty: Number(selectedSiteStock?.siteqty || 0) + quantityToApply,
+          unit: (selectedSiteStock?.unit || unit),
+          transactiondate: now,
+          frominventory: null,
+          toinventory: selectedSiteId
+        };
+        await createStockLedger(selectedSiteLedgerPayload);
+      }
+
+      const refreshedStockData = await fetchStocks();
+      setStocks(Array.isArray(refreshedStockData) ? refreshedStockData.map(normalizeStock) : []);
+      const refreshedItemMasters = await fetchItemMasters();
+      setItemMasters(Array.isArray(refreshedItemMasters) ? refreshedItemMasters : []);
       setCreateModal(null);
       showToast(`Item ${itemname} created successfully and stock ledger entry created.`);
     } catch (err) {
@@ -1002,22 +1115,33 @@ export default function StockPage() {
                 )}
               </div>
             </label>
-            {createModal.existingStock ? (
-              <label>
-                <span>Current Qty</span>
-                <input type="text" value={createModal.existingStock.siteqty ?? createModal.existingStock.availablestock ?? 0} readOnly />
-              </label>
-            ) : null}
             <label>
-              <span>Quantity</span>
+              <span>Site</span>
+              <select value={createModal.siteid} onChange={(e) => handleCreateChange('siteid', e.target.value)}>
+                <option value="">Select a site</option>
+                {sites.map((site) => (
+                  <option key={site.siteid} value={site.siteid}>
+                    {site.sitename || `Site ${site.siteid}`}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>New Qty</span>
               <input
                 type="number"
                 min="1"
-                value={createModal.availablestock}
-                onChange={(e) => handleCreateChange('availablestock', e.target.value)}
+                value={createModal.newqty}
+                onChange={(e) => handleCreateChange('newqty', e.target.value)}
                 style={createModal.fieldError === 'availablestock' ? { borderColor: 'red' } : undefined}
               />
             </label>
+            {createModal.selectedExistingItem ? (
+              <label>
+                <span>Available Qty</span>
+                <input type="text" value={createModal.availablestock} readOnly />
+              </label>
+            ) : null}
             <label>
               <span>Threshold</span>
               <input type="number" min="0" value={createModal.threshold} onChange={(e) => handleCreateChange('threshold', e.target.value)} />
@@ -1038,10 +1162,6 @@ export default function StockPage() {
                 readOnly
                 style={createModal.fieldError === 'barcodeprodid' ? { borderColor: 'red' } : undefined}
               />
-            </label>
-            <label>
-              <span>Inventory Code</span>
-              <input type="text" value={createModal.inventorycode ?? 1} readOnly />
             </label>
             {createModal.infoMessage ? <div className="form-message info">{createModal.infoMessage}</div> : null}
             {createModal.error ? <div className="form-error">{createModal.error}</div> : null}
