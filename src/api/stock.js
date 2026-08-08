@@ -1,5 +1,5 @@
 import { buildApiUrl } from './config';
-import { fetchWithAuthJson } from './apiClient';
+import { fetchWithAuth, fetchWithAuthJson } from './apiClient';
 
 const buildUrl = (path) => buildApiUrl(path);
 
