@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import '../App.css';
 import { getApiBaseUrl } from '../api/config';
+import { fetchWithAuthJson, fetchWithAuth } from '../api/apiClient';
 
 function AttendanceListPage({ activeView }) {
   const [rows, setRows] = useState([]);
@@ -18,13 +19,7 @@ function AttendanceListPage({ activeView }) {
     try {
       const now = new Date();
       const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-      const res = await fetch(`${getApiBaseUrl()}/attendance/date/${today}`);
-      if (!res.ok) {
-        const body = await res.text();
-        throw new Error(`Unable to load attendance for ${today}: ${res.status} ${res.statusText} ${body}`);
-      }
-
-      const data = await res.json();
+      const data = await fetchWithAuthJson(`${getApiBaseUrl()}/attendance/date/${today}`);
       setRows(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error(err);
@@ -58,9 +53,8 @@ function AttendanceListPage({ activeView }) {
         },
       };
 
-      const res = await fetch(`${getApiBaseUrl()}/attendance/${id}`, {
+      const res = await fetchWithAuth(`${getApiBaseUrl()}/attendance/${id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 

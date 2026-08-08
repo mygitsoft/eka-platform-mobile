@@ -1,65 +1,48 @@
 import { buildApiUrl } from './config';
+import { fetchWithAuthJson } from './apiClient';
 
 const buildUrl = (path) => buildApiUrl(path);
 
 export async function fetchStocks() {
-  const res = await fetch(buildUrl('/stock'));
-  if (!res.ok) throw new Error(`API error ${res.status}`);
-  return res.json();
+  return fetchWithAuthJson(buildUrl('/stock'));
 }
 
 export async function fetchLowStockItems() {
-  const res = await fetch(buildUrl('/stock/low'));
-  if (!res.ok) throw new Error(`API error ${res.status}`);
-  return res.json();
+  return fetchWithAuthJson(buildUrl('/stock/low'));
 }
 
 export async function fetchZeroStockItems() {
-  const res = await fetch(buildUrl('/stock/zero'));
-  if (!res.ok) throw new Error(`API error ${res.status}`);
-  return res.json();
+  return fetchWithAuthJson(buildUrl('/stock/zero'));
 }
 
 export async function fetchOldStockItems() {
-  const res = await fetch(buildUrl('/stock/old'));
-  if (!res.ok) throw new Error(`API error ${res.status}`);
-  return res.json();
+  return fetchWithAuthJson(buildUrl('/stock/old'));
 }
 
 export async function fetchDeadStockItems() {
-  const res = await fetch(buildUrl('/stock/dead'));
-  if (!res.ok) throw new Error(`API error ${res.status}`);
-  return res.json();
+  return fetchWithAuthJson(buildUrl('/stock/dead'));
 }
 
 export async function fetchAgedItemCount() {
-  const res = await fetch(buildUrl('/itemmaster/old'));
-  if (!res.ok) throw new Error(`API error ${res.status}`);
-  const data = await res.json();
+  const data = await fetchWithAuthJson(buildUrl('/itemmaster/old'));
   return Number(data || 0);
 }
 
 export async function fetchStock(itemcode, inventorycode = null) {
   const path = inventorycode == null ? `/stock/${itemcode}` : `/stock/${itemcode}/${inventorycode}`;
-  const res = await fetch(buildUrl(path));
-  if (!res.ok) throw new Error(`API error ${res.status}`);
-  return res.json();
+  return fetchWithAuthJson(buildUrl(path));
 }
 
 export async function fetchSites() {
-  const res = await fetch(buildUrl('/sites'));
-  if (!res.ok) throw new Error(`API error ${res.status}`);
-  return res.json();
+  return fetchWithAuthJson(buildUrl('/sites'));
 }
 
 export async function fetchItemMasters() {
-  const res = await fetch(buildUrl('/itemmaster'));
-  if (!res.ok) throw new Error(`API error ${res.status}`);
-  return res.json();
+  return fetchWithAuthJson(buildUrl('/itemmaster'));
 }
 
 export async function fetchStockByBarcodeProdId(barcodeprodid) {
-  const res = await fetch(buildUrl(`/stock/barcode/${encodeURIComponent(barcodeprodid)}`));
+  const res = await fetchWithAuth(buildUrl(`/stock/barcode/${encodeURIComponent(barcodeprodid)}`));
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`API error ${res.status}`);
   const data = await res.json();
@@ -67,37 +50,28 @@ export async function fetchStockByBarcodeProdId(barcodeprodid) {
 }
 
 export async function createItemMaster(itemMaster) {
-  const res = await fetch(buildUrl('/itemmaster'), {
+  return fetchWithAuthJson(buildUrl('/itemmaster'), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(itemMaster)
   });
-  if (!res.ok) throw new Error(`API error ${res.status}`);
-  return res.json();
 }
 
 export async function createStock(stock) {
-  const res = await fetch(buildUrl('/stock'), {
+  return fetchWithAuthJson(buildUrl('/stock'), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(stock)
   });
-  if (!res.ok) throw new Error(`API error ${res.status}`);
-  return res.json();
 }
 
 export async function createStockLedger(stockLedger) {
-  const res = await fetch(buildUrl('/stockledger'), {
+  return fetchWithAuthJson(buildUrl('/stockledger'), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(stockLedger)
   });
-  if (!res.ok) throw new Error(`API error ${res.status}`);
-  return res.json();
 }
 
 export async function deleteStock(itemcode, inventorycode) {
-  const res = await fetch(buildUrl(`/stock/${itemcode}/${inventorycode}`), {
+  const res = await fetchWithAuth(buildUrl(`/stock/${itemcode}/${inventorycode}`), {
     method: 'DELETE'
   });
   if (!res.ok) throw new Error(`API error ${res.status}`);
@@ -105,17 +79,12 @@ export async function deleteStock(itemcode, inventorycode) {
 }
 
 export async function updateStock(itemcode, inventorycode, stock) {
-  const res = await fetch(buildUrl(`/stock/${itemcode}/${inventorycode}`), {
+  return fetchWithAuthJson(buildUrl(`/stock/${itemcode}/${inventorycode}`), {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(stock)
   });
-  if (!res.ok) throw new Error(`API error ${res.status}`);
-  return res.json();
 }
 
 export async function fetchStockLedger() {
-  const res = await fetch(buildUrl('/stockledger'));
-  if (!res.ok) throw new Error(`API error ${res.status}`);
-  return res.json();
+  return fetchWithAuthJson(buildUrl('/stockledger'));
 }
