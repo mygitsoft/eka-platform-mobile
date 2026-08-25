@@ -1,4 +1,4 @@
-const DEFAULT_API_BASE_URL = ' https://suit-remarkable-humanities-compare.trycloudflare.com/api';
+const DEFAULT_API_BASE_URL = 'https://renew-genius-closest-beats.trycloudflare.com/api';
 
 const normalizeApiBaseUrl = (value) => {
   const trimmed = value?.trim().replace(/\/+$/, '');

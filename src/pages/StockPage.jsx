@@ -13,6 +13,8 @@ import {
   createStockLedger
 } from '../api/stock';
 import { BarcodeScanner } from '@capacitor-mlkit/barcode-scanning';
+import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
+import { Script, TextRecognition } from '@capacitor-mlkit/text-recognition';
 
 function normalizeStock(stock, index) {
   return {
@@ -36,6 +38,7 @@ export default function StockPage() {
   const [swapLockActive, setSwapLockActive] = useState(false);
   const [invalidateLockActive, setInvalidateLockActive] = useState(false);
   const [createModal, setCreateModal] = useState(null);
+  const [ocrCaptureModal, setOcrCaptureModal] = useState(null);
   const [invalidateModal, setInvalidateModal] = useState(null);
   const [highlightedRowKey, setHighlightedRowKey] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -416,6 +419,176 @@ export default function StockPage() {
     };
   };
 
+  const parseDateFromText = (text) => {
+    if (!text) return '';
+    const normalized = text.replace(/[\u2010\u2011\u2012\u2013]/g, '-');
+    const patterns = [
+      /(?:exp(?:iry)?|best before|bbf|use by|valid till|exp date|expiry date)[:\s]*([0-9]{1,2}[\/\-.\s][0-9]{1,2}[\/\-.\s][0-9]{2,4})/i,
+      /(?:exp(?:iry)?|best before|bbf|use by|valid till|exp date|expiry date)[:\s]*([0-9]{4}[\/\-.\s][0-9]{1,2}[\/\-.\s][0-9]{1,2})/i,
+      /([0-9]{1,2}[\/\-.\s][0-9]{1,2}[\/\-.\s][0-9]{2,4})/,
+      /([0-9]{4}[\/\-.\s][0-9]{1,2}[\/\-.\s][0-9]{1,2})/
+    ];
+
+    for (const regex of patterns) {
+      const match = normalized.match(regex);
+      if (match?.[1]) return match[1].trim();
+    }
+    return '';
+  };
+
+  const parseOcrFieldsFromText = (text) => {
+    const lines = (text || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    let itemname = '';
+    let batchno = '';
+    let expirydate = '';
+    let manufacturedate = '';
+    let manufacturer = '';
+    let genericDate = '';
+
+    const isExpiryLine = (line) => /(?:\bexp\b|expiry|best before|use by|bbf|valid till|exp date|expiry date)/i.test(line);
+    const isManufactureDateLine = (line) => /(?:\bmfg\b|\bmfd\b|manufacture date|mfg date|mfd date|mfg[:\s])/i.test(line);
+    const isManufacturerLine = (line) => /(?:manufactured by|manufactured for|product of|imported and marketed by|marketed by|distributed by|made by)/i.test(line);
+
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index];
+
+      if (!batchno && /(batch|lot|batch no|lot no|batch#|lot#)/i.test(line)) {
+        batchno = line.replace(/.*(?:batch|lot|batch no|lot no|batch#|lot#)[:\-\s]*/i, '').trim();
+      }
+
+      if (isExpiryLine(line)) {
+        const parsed = parseDateFromText(line);
+        if (parsed) expirydate = parsed;
+      } else if (isManufactureDateLine(line)) {
+        const parsed = parseDateFromText(line);
+        if (parsed) {
+          manufacturedate = manufacturedate || parsed;
+        }
+      } else {
+        if (!genericDate) {
+          const parsed = parseDateFromText(line);
+          if (parsed) genericDate = parsed;
+        }
+      }
+
+      if (!manufacturer && isManufacturerLine(line)) {
+        manufacturer = line.replace(/.*(?:manufactured by|manufactured for|product of|imported and marketed by|marketed by|distributed by|made by)[:\-\s]*/i, '').trim();
+        if (!manufacturer && lines[index + 1]) {
+          manufacturer = lines[index + 1].trim();
+        }
+      }
+
+      if (!itemname && /^(item|product|name|description)[:\-]/i.test(line)) {
+        itemname = line.replace(/^(item|product|name|description)[:\-]\s*/i, '').trim();
+      }
+    }
+
+    if (!expirydate) {
+      expirydate = genericDate;
+    }
+
+    // If manufacture date wasn't explicit but genericDate looks like it could be a manufacture date
+    // avoid overwriting an explicit expiry. Only set manufacturedate if it was detected earlier.
+    if (!manufacturedate && /mfg[:\s]/i.test((text || ''))) {
+      // try to find a manufacture-like token line
+      const mMatch = (text || '').match(/(?:mfg[:\s]*)([0-9]{1,2}[\/\-\.\s][0-9]{1,2}[\/\-\.\s][0-9]{2,4}|[0-9]{4}[\/\-\.\s][0-9]{1,2}[\/\-\.\s][0-9]{1,2})/i);
+      if (mMatch && mMatch[1]) manufacturedate = mMatch[1].trim();
+    }
+
+    if (!itemname) {
+      itemname = lines.find((line) => line.length > 3 && !/(batch|lot|exp|expiry|mfg|mrp|qty|code|manufacturer|made by)/i.test(line)) || '';
+    }
+
+    return {
+      itemname,
+      batchno,
+      expirydate,
+      manufacturedate,
+      manufacturer,
+      rawText: text
+    };
+  };
+
+  const parseOcrImages = async (images) => {
+    let combinedText = '';
+    for (let i = 0; i < images.length; i += 1) {
+      const image = images[i];
+      if (!image?.path) continue;
+      const result = await TextRecognition.processImage({
+        path: image.path,
+        script: Script.Latin
+      });
+      combinedText += `${result.text || ''}\n`;
+    }
+    return parseOcrFieldsFromText(combinedText);
+  };
+
+  const openOcrCaptureModal = (defaults = {}) => {
+    setOcrCaptureModal({
+      barcodeprodid: defaults.barcodeprodid || '',
+      siteid: defaults.siteid ?? defaults.inventorycode ?? 1,
+      inventorycode: defaults.inventorycode ?? defaults.siteid ?? 1,
+      images: [],
+      parsedText: defaults.parsedText || '',
+      itemname: defaults.itemname || '',
+      batchno: defaults.batchno || '',
+      expirydate: defaults.expirydate || '',
+      manufacturedate: defaults.manufacturedate || '',
+      manufacturer: defaults.manufacturer || '',
+      error: '',
+      isCapturing: false,
+      infoMessage: defaults.infoMessage ?? ''
+    });
+  };
+
+  const handleOcrCaptureFieldChange = (field, value) => {
+    setOcrCaptureModal((prev) => (prev ? { ...prev, [field]: value, error: '' } : prev));
+  };
+
+  const handleAddOcrPhoto = async () => {
+    if (!ocrCaptureModal) return;
+    setOcrCaptureModal((prev) => (prev ? { ...prev, error: '', isCapturing: true } : prev));
+    try {
+      const photo = await Camera.getPhoto({
+        quality: 80,
+        resultType: CameraResultType.Uri,
+        source: CameraSource.Camera,
+        correctOrientation: true
+      });
+      const path = photo.path || photo.webPath;
+      if (!path) {
+        throw new Error('Failed to capture image path.');
+      }
+      const image = { path, webPath: photo.webPath || path };
+      const currentImages = ocrCaptureModal ? [...ocrCaptureModal.images, image] : [image];
+      setOcrCaptureModal((prev) => (prev ? { ...prev, images: currentImages, error: '', isCapturing: false } : prev));
+      const parsed = await parseOcrImages(currentImages);
+      setOcrCaptureModal((prev) => (prev ? { ...prev, ...parsed, parsedText: parsed.rawText || '', isCapturing: false } : prev));
+    } catch (err) {
+      setOcrCaptureModal((prev) => (prev ? { ...prev, error: err?.message || 'Failed to capture OCR photo.', isCapturing: false } : prev));
+    }
+  };
+
+  const handleUseOcrData = () => {
+    if (!ocrCaptureModal) return;
+    openCreateModal({
+      itemname: ocrCaptureModal.itemname || '',
+      batchno: ocrCaptureModal.batchno || '',
+      expirydate: ocrCaptureModal.expirydate || '',
+      manufacturedate: ocrCaptureModal.manufacturedate || '',
+      manufacturer: ocrCaptureModal.manufacturer || '',
+      barcodeprodid: ocrCaptureModal.barcodeprodid || '',
+      siteid: ocrCaptureModal.siteid || 1,
+      inventorycode: ocrCaptureModal.inventorycode || 1,
+      infoMessage: 'Review OCR extracted values and enter stock quantity.'
+    });
+    setOcrCaptureModal(null);
+  };
+
+  const handleCloseOcrModal = () => {
+    setOcrCaptureModal(null);
+  };
+
   const openCreateModal = (defaults = {}) => {
     setCreateModal({
       itemname: defaults.itemname || '',
@@ -424,7 +597,10 @@ export default function StockPage() {
       threshold: defaults.threshold ?? '',
       unit: defaults.unit || '',
       manufacturer: defaults.manufacturer || '',
+      manufacturedate: defaults.manufacturedate || '',
       barcodeprodid: defaults.barcodeprodid ?? '',
+      batchno: defaults.batchno || '',
+      expirydate: defaults.expirydate || '',
       siteid: defaults.siteid ?? defaults.inventorycode ?? 1,
       inventorycode: defaults.inventorycode ?? defaults.siteid ?? 1,
       existingStock: defaults.existingStock ?? null,
@@ -487,12 +663,12 @@ export default function StockPage() {
         return;
       }
 
-      openCreateModal({
+      openOcrCaptureModal({
         barcodeprodid: barcodeValue,
         inventorycode: 1,
-        infoMessage: 'This product does not exist. Please make a manual entry.'
+        infoMessage: 'Product not found. Capture one or more photos to extract item details.'
       });
-      showToast('Barcode scanned successfully. Enter details to create a new stock entry.');
+      showToast('Barcode scanned successfully. Capture photos to extract item details.');
     } catch (err) {
       showToast(err?.message || 'Barcode scan failed.');
     }
@@ -706,6 +882,7 @@ export default function StockPage() {
     const threshold = thresholdValue === '' ? null : Number(thresholdValue);
     const unit = (createModal.unit || '').toString().trim();
     const manufacturer = (createModal.manufacturer || '').toString().trim();
+    const manufacturedate = (createModal.manufacturedate || '').toString().trim();
     const selectedSiteIdValue = (createModal.siteid ?? '').toString().trim();
     const selectedSiteId = selectedSiteIdValue === '' ? null : Number(selectedSiteIdValue);
 
@@ -760,6 +937,11 @@ export default function StockPage() {
         siteqty: siteQtyValue,
         threshold,
         unit,
+        manufacturer: manufacturer || null,
+        manufacturedate: manufacturedate || null,
+        barcodeprodid: createModal.barcodeprodid || null,
+        batchno: createModal.batchno || null,
+        expirydate: createModal.expirydate || null,
         stockentrydate: now,
         stockstatus: 'In Stock'
       });
@@ -780,6 +962,11 @@ export default function StockPage() {
             siteqty: updatedSiteQty,
             threshold: updatedThreshold,
             unit: updatedUnit,
+            manufacturer: manufacturer || officeSiteStock.manufacturer || null,
+            manufacturedate: manufacturedate || officeSiteStock.manufacturedate || null,
+            barcodeprodid: createModal.barcodeprodid || officeSiteStock.barcodeprodid || null,
+            batchno: createModal.batchno || officeSiteStock.batchno || null,
+            expirydate: createModal.expirydate || officeSiteStock.expirydate || null,
             stockstatus: updatedAvailableStock > 0 ? 'In Stock' : 'Out of Stock',
             stockentrydate: officeSiteStock.stockentrydate || now,
             stockexitdate: officeSiteStock.stockexitdate || null
@@ -856,6 +1043,11 @@ export default function StockPage() {
             itemname,
             siteqty: updatedSiteQty,
             unit: updatedUnit,
+            manufacturer: manufacturer || selectedSiteStock.manufacturer || null,
+            manufacturedate: manufacturedate || selectedSiteStock.manufacturedate || null,
+            barcodeprodid: createModal.barcodeprodid || selectedSiteStock.barcodeprodid || null,
+            batchno: createModal.batchno || selectedSiteStock.batchno || null,
+            expirydate: createModal.expirydate || selectedSiteStock.expirydate || null,
             stockstatus: updatedSiteQty > 0 ? 'In Stock' : 'Out of Stock',
             stockentrydate: selectedSiteStock.stockentrydate || now,
             stockexitdate: selectedSiteStock.stockexitdate || null
@@ -1083,6 +1275,70 @@ export default function StockPage() {
         </div>
       )}
 
+      {ocrCaptureModal && (
+        <div className="modal-backdrop">
+          <div className="modal-card">
+            <h3>OCR capture item details</h3>
+            {ocrCaptureModal.infoMessage ? <div className="form-message info">{ocrCaptureModal.infoMessage}</div> : null}
+            <button type="button" className="primary-btn" onClick={handleAddOcrPhoto} disabled={ocrCaptureModal.isCapturing}>
+              {ocrCaptureModal.isCapturing ? 'Capturing photo…' : 'Capture OCR photo'}
+            </button>
+            {!!ocrCaptureModal.images.length && (
+              <div className="ocr-image-preview-row">
+                {ocrCaptureModal.images.map((image, idx) => (
+                  <div key={idx} className="ocr-image-preview">
+                    <img src={image.webPath || image.path} alt={`OCR capture ${idx + 1}`} />
+                  </div>
+                ))}
+              </div>
+            )}
+            <label>
+              <span>OCR item name</span>
+              <input type="text" value={ocrCaptureModal.itemname} onChange={(e) => handleOcrCaptureFieldChange('itemname', e.target.value)} />
+            </label>
+            <label>
+              <span>OCR batch no</span>
+              <input type="text" value={ocrCaptureModal.batchno} onChange={(e) => handleOcrCaptureFieldChange('batchno', e.target.value)} />
+            </label>
+            <label>
+              <span>OCR expiry date</span>
+              <input type="text" value={ocrCaptureModal.expirydate} onChange={(e) => handleOcrCaptureFieldChange('expirydate', e.target.value)} placeholder="DD/MM/YYYY or YYYY-MM-DD" />
+            </label>
+            <label>
+              <span>OCR manufacture date</span>
+              <input type="text" value={ocrCaptureModal.manufacturedate} onChange={(e) => handleOcrCaptureFieldChange('manufacturedate', e.target.value)} placeholder="DD/MM/YYYY or YYYY-MM-DD" />
+            </label>
+            <label>
+              <span>OCR manufacturer</span>
+              <input type="text" value={ocrCaptureModal.manufacturer} onChange={(e) => handleOcrCaptureFieldChange('manufacturer', e.target.value)} />
+            </label>
+            <label>
+              <span>Barcode</span>
+              <input type="text" value={ocrCaptureModal.barcodeprodid || ''} readOnly />
+            </label>
+            {ocrCaptureModal.parsedText ? (
+              <label>
+                <span>Recognized text</span>
+                <textarea readOnly value={ocrCaptureModal.parsedText} rows={4} />
+              </label>
+            ) : null}
+            {ocrCaptureModal.error ? <div className="form-error">{ocrCaptureModal.error}</div> : null}
+            <div className="modal-actions">
+              <button type="button" className="ghost-btn" onClick={handleCloseOcrModal}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="primary-btn"
+                onClick={handleUseOcrData}
+                disabled={!ocrCaptureModal.itemname && !ocrCaptureModal.batchno && !ocrCaptureModal.expirydate}
+              >
+                Use OCR data
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {createModal && (
         <div className="modal-backdrop">
           <div className="modal-card">
@@ -1153,6 +1409,18 @@ export default function StockPage() {
             <label>
               <span>Manufacturer</span>
               <input type="text" value={createModal.manufacturer} onChange={(e) => handleCreateChange('manufacturer', e.target.value)} />
+            </label>
+            <label>
+              <span>Manufacture Date</span>
+              <input type="text" value={createModal.manufacturedate || ''} onChange={(e) => handleCreateChange('manufacturedate', e.target.value)} placeholder="DD/MM/YYYY or YYYY-MM-DD" />
+            </label>
+            <label>
+              <span>Batch No</span>
+              <input type="text" value={createModal.batchno || ''} onChange={(e) => handleCreateChange('batchno', e.target.value)} />
+            </label>
+            <label>
+              <span>Expiry Date</span>
+              <input type="text" value={createModal.expirydate || ''} onChange={(e) => handleCreateChange('expirydate', e.target.value)} placeholder="DD/MM/YYYY or YYYY-MM-DD" />
             </label>
             <label>
               <span>Barcode</span>

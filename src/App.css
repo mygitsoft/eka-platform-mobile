@@ -182,6 +182,43 @@ body,
   gap: 18px;
 }
 
+.purchase-invoice-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  gap: 16px;
+}
+
+.purchase-upload-button {
+  min-height: 128px;
+  width: min(100%, 320px);
+  border: 1px solid #2563eb;
+  border-radius: 18px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 20px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.purchase-upload-button svg {
+  width: 32px;
+  height: 32px;
+}
+
+.purchase-upload-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .attendance-card form {
   display: flex;
   flex-direction: column;
@@ -990,6 +1027,32 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.ocr-image-preview-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.ocr-image-preview {
+  width: 46px;
+  height: 46px;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #f8fafc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ocr-image-preview img {
+  height: 100%;
+  width: auto;
+  object-fit: cover;
 }
 
 .modal-actions {

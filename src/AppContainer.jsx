@@ -8,6 +8,7 @@ import AttendancePage from './pages/AttendancePage';
 import AttendanceListPage from './pages/AttendanceListPage';
 import StockPage from './pages/StockPage';
 import OrdersPage from './pages/OrdersPage';
+import PurchaseInvoicePage from './pages/PurchaseInvoicePage';
 import { getApiBaseUrl } from './api/config';
 import { fetchWithAuthJson, fetchWithAuth } from './api/apiClient';
 import { calculateAttendanceAmount, getContractorOptions, validateAttendanceDate, validateAttendanceFields } from './utils/attendanceValidation';
@@ -393,6 +394,16 @@ function AppContainer() {
           >
             Orders
           </button>
+          <button
+            type="button"
+            className={`nav-item ${activeView === 'process-purchase' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveView('process-purchase');
+              setSidebarOpen(false);
+            }}
+          >
+            Process Purchase
+          </button>
         </nav>
       </aside>
 
@@ -455,6 +466,8 @@ function AppContainer() {
           <LoginPage />
         ) : activeView === 'orders' ? (
           <OrdersPage />
+        ) : activeView === 'process-purchase' ? (
+          <PurchaseInvoicePage />
         ) : (
           <StockPage />
         )}
