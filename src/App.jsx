@@ -17,9 +17,16 @@ function App() {
         const handleAuthSaved = () => {
             checkLogin();
         };
+        const handleAuthLogout = () => {
+            checkLogin();
+        };
 
         window.addEventListener('authTokensSaved', handleAuthSaved);
-        return () => window.removeEventListener('authTokensSaved', handleAuthSaved);
+        window.addEventListener('authLogout', handleAuthLogout);
+        return () => {
+            window.removeEventListener('authTokensSaved', handleAuthSaved);
+            window.removeEventListener('authLogout', handleAuthLogout);
+        };
     }, [checkLogin]);
 
     if (!authenticated) {

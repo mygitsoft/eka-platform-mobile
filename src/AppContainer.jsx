@@ -12,6 +12,8 @@ import { getApiBaseUrl } from './api/config';
 import { fetchWithAuthJson, fetchWithAuth } from './api/apiClient';
 import { calculateAttendanceAmount, getContractorOptions, validateAttendanceDate, validateAttendanceFields } from './utils/attendanceValidation';
 import { AuthProvider } from "./auth/AuthContext";
+import { FiLogOut, FiUser } from 'react-icons/fi';
+import { logout } from './auth/authService';
 const getDefaultDateValue = () => {
   const date = new Date();
   const year = date.getFullYear();
@@ -57,7 +59,18 @@ function AppContainer() {
   const [loadingTotalEmployeeCount, setLoadingTotalEmployeeCount] = useState(true);
   const [activeView, setActiveView] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const contractorOptions = getContractorOptions(employees);
+
+  const handleLogout = async () => {
+    setLoggingOut(true);
+
+    try {
+      await logout();
+    } finally {
+      setLoggingOut(false);
+    }
+  };
 
   useEffect(() => {
     const nextAmount = calculateAttendanceAmount(rate, workingDays);
@@ -333,7 +346,22 @@ function AppContainer() {
         {/*<p className="sidebar-logo">EKA Platform</p>*/}  
         </div>
 
-        <div className="header-spacer" />
+        <div className="header-actions">
+          <button type="button" className="header-action-btn" aria-label="Profile">
+            <FiUser aria-hidden="true" />
+            <span>Profile</span>
+          </button>
+          <button
+            type="button"
+            className="header-action-btn"
+            onClick={handleLogout}
+            disabled={loggingOut}
+            aria-label="Logout"
+          >
+            <FiLogOut aria-hidden="true" />
+            <span>{loggingOut ? 'Logging out...' : 'Logout'}</span>
+          </button>
+        </div>
       </header>
 
       <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>

@@ -69,9 +69,43 @@ body,
   color: #0f172a;
 }
 
-.header-spacer {
-  width: 44px;
-  height: 44px;
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-action-btn {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  padding: 0 13px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.header-action-btn svg {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+}
+
+.header-action-btn:hover:not(:disabled),
+.header-action-btn:focus-visible {
+  background: rgba(255, 255, 255, 0.2);
+  outline: 2px solid #f9d56e;
+  outline-offset: 2px;
+}
+
+.header-action-btn:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .hamburger-btn span {
