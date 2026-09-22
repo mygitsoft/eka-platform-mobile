@@ -1,7 +1,7 @@
 export const authConfig = {
 
     authority:
-        "https://seq-museum-receiver-premium.trycloudflare.com/realms/ekaplatform",
+        "https://operator-critics-settle-peers.trycloudflare.com/realms/ekaplatform",
 
     clientId:
         "eka-mobile",

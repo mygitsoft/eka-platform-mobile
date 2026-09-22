@@ -3,7 +3,23 @@ import { login } from "../auth/authService";
 
 function Login() {
     useEffect(() => {
-        login();
+        let cancelled = false;
+        const loginTimer = setTimeout(async () => {
+            if (cancelled) {
+                return;
+            }
+
+            try {
+                await login();
+            } catch (error) {
+                console.error("Failed to open Keycloak login:", error);
+            }
+        }, 500);
+
+        return () => {
+            cancelled = true;
+            clearTimeout(loginTimer);
+        };
     }, []);
 
     return (
