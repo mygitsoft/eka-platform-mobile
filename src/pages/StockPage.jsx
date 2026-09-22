@@ -1,10 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { FiRefreshCw, FiSave } from 'react-icons/fi';
-import { TbBarcode } from 'react-icons/tb';
 import {
   fetchStocks,
   fetchSites,
-  fetchStockByBarcodeProdId,
   fetchItemMasters,
   updateStock,
   createStock,
@@ -12,7 +10,6 @@ import {
   createItemMaster,
   createStockLedger
 } from '../api/stock';
-import { BarcodeScanner } from '@capacitor-mlkit/barcode-scanning';
 
 function normalizeStock(stock, index) {
   return {
@@ -232,6 +229,7 @@ export default function StockPage() {
       stock,
       targetSiteId: '',
       targetQty: initialQty,
+      refNo: '',
       error: ''
     });
   };
@@ -259,6 +257,7 @@ export default function StockPage() {
     const source = swapModal.stock;
     const targetQty = Number(swapModal.targetQty);
     const targetSiteId = Number(swapModal.targetSiteId);
+    const movementRefNo = (swapModal.refNo || '').trim();
 
     if (!swapModal.targetSiteId || Number.isNaN(targetSiteId) || Number.isNaN(targetQty) || targetQty <= 0) {
       setSwapModal((prev) => (prev ? { ...prev, error: 'Please select a site and enter a valid quantity.' } : prev));
@@ -294,7 +293,8 @@ export default function StockPage() {
       totalavailableqty: updatedSourceQty,
       transactiondate: firstLedgerTimestamp,
       frominventory: source.inventorycode,
-      toinventory: targetSiteId
+      toinventory: targetSiteId,
+      movementrefno: movementRefNo
     };
 
     const inLedgerEntry = {
@@ -306,7 +306,8 @@ export default function StockPage() {
       totalavailableqty: targetUpdatedQty,
       transactiondate: secondLedgerTimestamp,
       frominventory: source.inventorycode,
-      toinventory: targetSiteId
+      toinventory: targetSiteId,
+      movementrefno: movementRefNo
     };
 
     setPendingLedgerEntries((prev) => [...prev, outLedgerEntry, inLedgerEntry]);
@@ -388,34 +389,6 @@ export default function StockPage() {
     setSwapModal(null);
   };
 
-  const getCreateDefaultsFromBarcode = (barcode) => {
-    const scannedValue = barcode?.rawValue || barcode?.displayValue || '';
-    if (!scannedValue) {
-      return { itemname: '', availablestock: '', threshold: '' };
-    }
-
-    if (scannedValue.trim().startsWith('{')) {
-      try {
-        const parsed = JSON.parse(scannedValue);
-        return {
-          itemname: parsed.itemname || parsed.name || parsed.title || scannedValue,
-          availablestock: parsed.availablestock ?? parsed.siteqty ?? parsed.qty ?? '',
-          threshold: parsed.threshold ?? parsed.min ?? '',
-          barcodeprodid: parsed.barcodeprodid || parsed.barcode || scannedValue
-        };
-      } catch (e) {
-        // fall through to use raw string value
-      }
-    }
-
-    return {
-      itemname: scannedValue,
-      availablestock: '',
-      threshold: '',
-      barcodeprodid: scannedValue
-    };
-  };
-
   const openCreateModal = (defaults = {}) => {
     setCreateModal({
       itemname: defaults.itemname || '',
@@ -423,8 +396,6 @@ export default function StockPage() {
       newqty: defaults.newqty ?? '',
       threshold: defaults.threshold ?? '',
       unit: defaults.unit || '',
-      manufacturer: defaults.manufacturer || '',
-      barcodeprodid: defaults.barcodeprodid ?? '',
       siteid: defaults.siteid ?? defaults.inventorycode ?? 1,
       inventorycode: defaults.inventorycode ?? defaults.siteid ?? 1,
       existingStock: defaults.existingStock ?? null,
@@ -436,68 +407,6 @@ export default function StockPage() {
     });
   };
 
-  const handleScanBarcode = async () => {
-    if (swapLockActive || invalidateLockActive || Object.keys(editedStocks).length > 0) {
-      showToast('Save pending changes before scanning a barcode.');
-      return;
-    }
-
-    try {
-      const supported = await BarcodeScanner.isSupported();
-      if (!supported?.supported) {
-        showToast('Barcode scanning is not supported on this device.');
-        return;
-      }
-
-      const result = await BarcodeScanner.scan();
-      console.log('Barcode scan result:', result);
-      const barcode = Array.isArray(result?.barcodes) ? result.barcodes[0] : null;
-
-      if (!barcode || !(barcode.rawValue || barcode.displayValue)) {
-        showToast('No barcode data was captured.');
-        return;
-      }
-
-      const barcodeValue = (barcode.displayValue || barcode.rawValue || '').trim();
-      if (!barcodeValue) {
-        showToast('No barcode value was captured.');
-        return;
-      }
-
-      const existingStock = await fetchStockByBarcodeProdId(barcodeValue);
-      if (existingStock) {
-        const existingWithRowKey = {
-          ...existingStock,
-          _rowKey: existingStock._rowKey || `${existingStock.itemcode ?? 'unknown'}-${existingStock.inventorycode ?? 'site'}`
-        };
-
-        openCreateModal({
-          itemname: existingWithRowKey.itemname || '',
-          availablestock: '',
-          newqty: '',
-          threshold: existingWithRowKey.threshold ?? '',
-          barcodeprodid: existingWithRowKey.barcodeprodid || barcodeValue,
-          siteid: existingWithRowKey.inventorycode ?? 1,
-          inventorycode: existingWithRowKey.inventorycode ?? 1,
-          existingStock: existingWithRowKey,
-          selectedExistingItem: true,
-          infoMessage: `Item exists with ${existingWithRowKey.siteqty ?? existingWithRowKey.availablestock ?? 0} units. Enter quantity to add to stock.`
-        });
-        showToast('Existing stock found. Enter qty to add to current stock.');
-        return;
-      }
-
-      openCreateModal({
-        barcodeprodid: barcodeValue,
-        inventorycode: 1,
-        infoMessage: 'This product does not exist. Please make a manual entry.'
-      });
-      showToast('Barcode scanned successfully. Enter details to create a new stock entry.');
-    } catch (err) {
-      showToast(err?.message || 'Barcode scan failed.');
-    }
-  };
-
   const openInvalidateModal = (stock) => {
     if (swapLockActive || invalidateLockActive || Object.keys(editedStocks).length > 0) {
       showToast('Save pending changes before invalidating another item.');
@@ -507,6 +416,7 @@ export default function StockPage() {
     setInvalidateModal({
       stock,
       qty: '',
+      remarks: '',
       error: ''
     });
   };
@@ -538,6 +448,7 @@ export default function StockPage() {
 
     const stock = invalidateModal.stock;
     const qty = Number(invalidateModal.qty);
+    const invalidationRemarks = (invalidateModal.remarks || '').trim();
     const currentSiteQty = Number(stock.siteqty || 0);
     const officeRow = stocks.find((item) => item.itemcode === stock.itemcode && Number(item.inventorycode) === 1);
     const currentOfficeQty = Number(officeRow?.availablestock || 0);
@@ -569,7 +480,8 @@ export default function StockPage() {
       totalavailableqty: updatedSiteQty,
       transactiondate: firstLedgerTimestamp,
       frominventory: stock.inventorycode,
-      toinventory: stock.inventorycode
+      toinventory: stock.inventorycode,
+      invalremarks: invalidationRemarks
     };
     ledgerEntries.push(siteLedgerEntry);
 
@@ -583,7 +495,8 @@ export default function StockPage() {
         totalavailableqty: updatedOfficeQty,
         transactiondate: secondLedgerTimestamp,
         frominventory: stock.inventorycode,
-        toinventory: officeRow.inventorycode
+        toinventory: officeRow.inventorycode,
+        invalremarks: invalidationRemarks
       };
       ledgerEntries.push(officeLedgerEntry);
     }
@@ -679,8 +592,6 @@ export default function StockPage() {
           availablestock: hasBothFieldsSelected && matchedSiteStock ? String(matchedSiteStock.siteqty ?? '') : prev.availablestock,
           threshold: hasBothFieldsSelected && matchedSiteStock ? String(matchedSiteStock.threshold ?? '') : prev.threshold,
           unit: hasBothFieldsSelected && matchedSiteStock ? matchedSiteStock.unit || '' : prev.unit,
-          manufacturer: hasBothFieldsSelected && matchedSiteStock ? matchedSiteStock.manufacturer || '' : prev.manufacturer,
-          barcodeprodid: hasBothFieldsSelected && matchedSiteStock ? matchedSiteStock.barcodeprodid || prev.barcodeprodid : prev.barcodeprodid,
           inventorycode: hasBothFieldsSelected && matchedSiteStock ? matchedSiteStock.inventorycode ?? 1 : prev.inventorycode,
           showSuggestions: field === 'itemname' ? (value || '').trim().length > 0 : prev.showSuggestions,
           error: ''
@@ -705,7 +616,6 @@ export default function StockPage() {
     const thresholdValue = createModal.threshold.toString().trim();
     const threshold = thresholdValue === '' ? null : Number(thresholdValue);
     const unit = (createModal.unit || '').toString().trim();
-    const manufacturer = (createModal.manufacturer || '').toString().trim();
     const selectedSiteIdValue = (createModal.siteid ?? '').toString().trim();
     const selectedSiteId = selectedSiteIdValue === '' ? null : Number(selectedSiteIdValue);
 
@@ -912,9 +822,6 @@ export default function StockPage() {
         <button type="button" className="icon-btn primary-icon-btn" onClick={() => openCreateModal()} aria-label="Create stock item">
           +
         </button>
-        <button type="button" className="icon-btn" onClick={handleScanBarcode} aria-label="Scan barcode">
-          <TbBarcode />
-        </button>
         <div className="stock-page-title">
           <h1>Stock</h1>
         </div>
@@ -1033,6 +940,10 @@ export default function StockPage() {
               <input value={swapModal.stock.unit || ''} readOnly />
             </label>
             <label>
+              <span>Qty at Site</span>
+              <input value={swapModal.stock.siteqty ?? 0} readOnly />
+            </label>
+            <label>
               <span>Target Site</span>
               <select value={swapModal.targetSiteId} onChange={(e) => setSwapModal((prev) => (prev ? { ...prev, targetSiteId: e.target.value } : prev))}>
                 <option value="">Select site</option>
@@ -1046,6 +957,14 @@ export default function StockPage() {
             <label>
               <span>Target Qty</span>
               <input type="number" min="1" value={swapModal.targetQty} onChange={(e) => handleSwapQtyChange(e.target.value)} />
+            </label>
+            <label>
+              <span>Ref No</span>
+              <input
+                type="text"
+                value={swapModal.refNo}
+                onChange={(e) => setSwapModal((prev) => (prev ? { ...prev, refNo: e.target.value } : prev))}
+              />
             </label>
             {swapModal.error ? <div className="form-error">{swapModal.error}</div> : null}
             <div className="modal-actions">
@@ -1069,6 +988,14 @@ export default function StockPage() {
             <label>
               <span>Qty to invalidate</span>
               <input type="number" min="1" value={invalidateModal.qty} onChange={(e) => handleInvalidateQtyChange(e.target.value)} />
+            </label>
+            <label>
+              <span>Remarks</span>
+              <input
+                type="text"
+                value={invalidateModal.remarks}
+                onChange={(e) => setInvalidateModal((prev) => (prev ? { ...prev, remarks: e.target.value } : prev))}
+              />
             </label>
             {invalidateModal.error ? <div className="form-error">{invalidateModal.error}</div> : null}
             <div className="modal-actions">
@@ -1149,19 +1076,6 @@ export default function StockPage() {
             <label>
               <span>Unit</span>
               <input type="text" value={createModal.unit || ''} onChange={(e) => handleCreateChange('unit', e.target.value)} />
-            </label>
-            <label>
-              <span>Manufacturer</span>
-              <input type="text" value={createModal.manufacturer} onChange={(e) => handleCreateChange('manufacturer', e.target.value)} />
-            </label>
-            <label>
-              <span>Barcode</span>
-              <input
-                type="text"
-                value={createModal.barcodeprodid || ''}
-                readOnly
-                style={createModal.fieldError === 'barcodeprodid' ? { borderColor: 'red' } : undefined}
-              />
             </label>
             {createModal.infoMessage ? <div className="form-message info">{createModal.infoMessage}</div> : null}
             {createModal.error ? <div className="form-error">{createModal.error}</div> : null}

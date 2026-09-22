@@ -41,14 +41,6 @@ export async function fetchItemMasters() {
   return fetchWithAuthJson(buildUrl('/itemmaster'));
 }
 
-export async function fetchStockByBarcodeProdId(barcodeprodid) {
-  const res = await fetchWithAuth(buildUrl(`/stock/barcode/${encodeURIComponent(barcodeprodid)}`));
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`API error ${res.status}`);
-  const data = await res.json();
-  return Array.isArray(data) ? data[0] ?? null : data;
-}
-
 export async function createItemMaster(itemMaster) {
   return fetchWithAuthJson(buildUrl('/itemmaster'), {
     method: 'POST',

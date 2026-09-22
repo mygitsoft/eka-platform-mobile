@@ -1,7 +1,7 @@
 export const authConfig = {
 
     authority:
-        "https://alpha-iii-nation-maiden.trycloudflare.com/realms/ekaplatform",
+        "https://kissing-template-privacy-asylum.trycloudflare.com/realms/EnkonEngineering",
 
     clientId:
         "eka-mobile",

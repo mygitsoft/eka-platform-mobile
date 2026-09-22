@@ -7,12 +7,11 @@ import DashboardPage from './pages/DashboardPage';
 import AttendancePage from './pages/AttendancePage';
 import AttendanceListPage from './pages/AttendanceListPage';
 import StockPage from './pages/StockPage';
-import OrdersPage from './pages/OrdersPage';
 import { getApiBaseUrl } from './api/config';
 import { fetchWithAuthJson, fetchWithAuth } from './api/apiClient';
-import { calculateAttendanceAmount, getContractorOptions, validateAttendanceDate, validateAttendanceFields } from './utils/attendanceValidation';
+import { calculateAttendanceAmount, validateAttendanceDate, validateAttendanceFields } from './utils/attendanceValidation';
 import { AuthProvider } from "./auth/AuthContext";
-import { FiLogOut, FiUser } from 'react-icons/fi';
+import { FiLogOut } from 'react-icons/fi';
 import { logout } from './auth/authService';
 const getDefaultDateValue = () => {
   const date = new Date();
@@ -31,6 +30,7 @@ const getDefaultTimeValue = () => {
 
 function AppContainer() {
   const [employees, setEmployees] = useState([]);
+  const [contractorOptions, setContractorOptions] = useState([]);
   const [sites, setSites] = useState([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
   const [selectedSiteId, setSelectedSiteId] = useState('');
@@ -60,8 +60,6 @@ function AppContainer() {
   const [activeView, setActiveView] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
-  const contractorOptions = getContractorOptions(employees);
-
   const handleLogout = async () => {
     setLoggingOut(true);
 
@@ -95,25 +93,53 @@ function AppContainer() {
   }, [selectedEmployeeId, employees]);
 
   useEffect(() => {
-    const loadEmployees = async () => {
+    const loadContractors = async () => {
       setLoadingEmployees(true);
       setError('');
 
       try {
-        const apiUrl = `${getApiBaseUrl()}/employee`;
-        console.log('Loading employees from', apiUrl);
+        const apiUrl = `${getApiBaseUrl()}/employee/contractors`;
+        console.log('Loading contractors from', apiUrl);
         const data = await fetchWithAuthJson(apiUrl);
-        setEmployees(data || []);
+        const contractorData = Array.isArray(data) ? data : [];
+        setContractorOptions(contractorData.map((contractor) => ({
+          ...contractor,
+          employeeid: contractor.employeeid ?? contractor.contractorid ?? contractor.id,
+          employeename: contractor.employeename ?? contractor.contractorname ?? contractor.name
+        })));
+        setEmployees([]);
       } catch (err) {
-        console.error('Failed to load employees', err);
-        setError(err.message || String(err) || 'Unable to load employees.');
+        console.error('Failed to load contractors', err);
+        setError(err.message || String(err) || 'Unable to load contractors.');
       } finally {
         setLoadingEmployees(false);
       }
     };
 
-    loadEmployees();
+    loadContractors();
   }, []);
+
+  const loadEmployeesForContractor = async (selectedContractorId) => {
+    if (!selectedContractorId) {
+      setEmployees([]);
+      return;
+    }
+
+    setLoadingEmployees(true);
+    setError('');
+    try {
+      const data = await fetchWithAuthJson(
+        `${getApiBaseUrl()}/employee/contractor/${encodeURIComponent(selectedContractorId)}`
+      );
+      setEmployees(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Failed to load employees for contractor', err);
+      setEmployees([]);
+      setError(err.message || String(err) || 'Unable to load employees.');
+    } finally {
+      setLoadingEmployees(false);
+    }
+  };
 
   useEffect(() => {
     const loadSites = async () => {
@@ -347,10 +373,6 @@ function AppContainer() {
         </div>
 
         <div className="header-actions">
-          <button type="button" className="header-action-btn" aria-label="Profile">
-            <FiUser aria-hidden="true" />
-            <span>Profile</span>
-          </button>
           <button
             type="button"
             className="header-action-btn"
@@ -411,16 +433,6 @@ function AppContainer() {
           >
             Stock
           </button>
-          <button
-            type="button"
-            className={`nav-item ${activeView === 'orders' ? 'active' : ''}`}
-            onClick={() => {
-              setActiveView('orders');
-              setSidebarOpen(false);
-            }}
-          >
-            Orders
-          </button>
         </nav>
       </aside>
 
@@ -461,6 +473,7 @@ function AppContainer() {
             contractorId={contractorId}
             setContractorId={setContractorId}
             contractorOptions={contractorOptions}
+            loadEmployeesForContractor={loadEmployeesForContractor}
             designation={designation}
             setDesignation={setDesignation}
             rate={rate}
@@ -481,8 +494,6 @@ function AppContainer() {
           <AttendanceListPage activeView={activeView} />
         ) : activeView === 'LoginPage' ? (
           <LoginPage />
-        ) : activeView === 'orders' ? (
-          <OrdersPage />
         ) : (
           <StockPage />
         )}

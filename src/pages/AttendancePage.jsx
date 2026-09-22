@@ -20,6 +20,7 @@ function AttendancePage({
   contractorId,
   setContractorId,
   contractorOptions,
+  loadEmployeesForContractor,
   designation,
   setDesignation,
   rate,
@@ -39,10 +40,16 @@ function AttendancePage({
   const [showEmployeeSuggestions, setShowEmployeeSuggestions] = useState(false);
   const [showContractorSuggestions, setShowContractorSuggestions] = useState(false);
   const today = new Date();
-  const maxDate = today.toISOString().slice(0, 10);
+  const formatLocalDate = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+  const maxDate = formatLocalDate(today);
   const minDate = new Date(today);
   minDate.setDate(today.getDate() - 14);
-  const minDateString = minDate.toISOString().slice(0, 10);
+  const minDateString = formatLocalDate(minDate);
 
   const normalize = (value) => String(value ?? '').trim().toLowerCase();
 
@@ -107,6 +114,9 @@ function AttendancePage({
   const handleContractorSuggestionClick = (employee) => {
     setContractorId(String(employee.employeeid));
     setContractorName(employee.employeename || '');
+    setSelectedEmployeeId('');
+    setEmployeeSearch('');
+    loadEmployeesForContractor(employee.employeeid);
     setShowContractorSuggestions(false);
   };
 
@@ -149,44 +159,6 @@ function AttendancePage({
         </div>
 
         <div className="field-group">
-          <label htmlFor="employee">Select employee</label>
-          <div className="dropdown-field">
-            <input
-              id="employee"
-              type="text"
-              value={employeeSearch}
-              onChange={(event) => {
-                setEmployeeSearch(event.target.value);
-                setShowEmployeeSuggestions(true);
-              }}
-              onFocus={() => setShowEmployeeSuggestions(true)}
-              onBlur={() => {
-                window.setTimeout(() => setShowEmployeeSuggestions(false), 100);
-              }}
-              disabled={loadingEmployees}
-              autoComplete="off"
-              placeholder={loadingEmployees ? 'Loading employees...' : 'Choose employee'}
-            />
-            {showEmployeeSuggestions && employeeSuggestions.length > 0 ? (
-              <ul className="autocomplete-dropdown">
-                {employeeSuggestions.map((employee) => (
-                  <li key={employee.employeeid}>
-                    <button
-                      type="button"
-                      className="autocomplete-item"
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => handleEmployeeSuggestionClick(employee)}
-                    >
-                      <span>{formatEmployeeLabel(employee)}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="field-group">
           <label htmlFor="contractorName">
             Contractor name <span className="required-mark" aria-hidden="true">*</span>
           </label>
@@ -216,6 +188,44 @@ function AttendancePage({
                       className="autocomplete-item"
                       onMouseDown={(event) => event.preventDefault()}
                       onClick={() => handleContractorSuggestionClick(employee)}
+                    >
+                      <span>{formatEmployeeLabel(employee)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="field-group">
+          <label htmlFor="employee">Select employee</label>
+          <div className="dropdown-field">
+            <input
+              id="employee"
+              type="text"
+              value={employeeSearch}
+              onChange={(event) => {
+                setEmployeeSearch(event.target.value);
+                setShowEmployeeSuggestions(true);
+              }}
+              onFocus={() => setShowEmployeeSuggestions(true)}
+              onBlur={() => {
+                window.setTimeout(() => setShowEmployeeSuggestions(false), 100);
+              }}
+              disabled={!contractorId || loadingEmployees}
+              autoComplete="off"
+              placeholder={!contractorId ? 'Choose contractor first' : loadingEmployees ? 'Loading employees...' : 'Choose employee'}
+            />
+            {showEmployeeSuggestions && employeeSuggestions.length > 0 ? (
+              <ul className="autocomplete-dropdown">
+                {employeeSuggestions.map((employee) => (
+                  <li key={employee.employeeid}>
+                    <button
+                      type="button"
+                      className="autocomplete-item"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => handleEmployeeSuggestionClick(employee)}
                     >
                       <span>{formatEmployeeLabel(employee)}</span>
                     </button>
