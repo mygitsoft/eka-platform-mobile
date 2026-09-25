@@ -3,6 +3,10 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    minify: 'oxc',
+    cssMinify: 'lightningcss',
+  },
   server: {
     host: '0.0.0.0',
   },
