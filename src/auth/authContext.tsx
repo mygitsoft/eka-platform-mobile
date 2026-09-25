@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { getAccessToken } from "./tokenStorage";
+import { getAccessToken, getRoles } from "./tokenStorage";
 import {
     isTokenExpired,
     refreshAccessToken
@@ -9,12 +9,25 @@ const AuthContext = createContext();
 export function AuthProvider({ children }) {
 
     const [authenticated, setAuthenticated] = useState(false);
+    const [roles, setRoles] = useState([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-
         checkLogin();
 
+        const handleTokensSaved = () => checkLogin();
+        const handleLogout = () => {
+            setAuthenticated(false);
+            setRoles([]);
+        };
+
+        window.addEventListener('authTokensSaved', handleTokensSaved);
+        window.addEventListener('authLogout', handleLogout);
+
+        return () => {
+            window.removeEventListener('authTokensSaved', handleTokensSaved);
+            window.removeEventListener('authLogout', handleLogout);
+        };
     }, []);
 
     async function checkLogin() {
@@ -30,6 +43,7 @@ export function AuthProvider({ children }) {
         console.log("No access token");
 
         setAuthenticated(false);
+        setRoles([]);
         setLoading(false);
 
         return;
@@ -46,6 +60,7 @@ export function AuthProvider({ children }) {
         console.log("Access token is valid");
 
         setAuthenticated(true);
+        setRoles(await getRoles());
         setLoading(false);
 
         return;
@@ -61,12 +76,14 @@ export function AuthProvider({ children }) {
         console.log("Token refresh successful");
 
         setAuthenticated(true);
+        setRoles(await getRoles());
 
     } else {
 
         console.log("Token refresh failed");
 
         setAuthenticated(false);
+        setRoles([]);
     }
 
     setLoading(false);
@@ -77,6 +94,7 @@ export function AuthProvider({ children }) {
         <AuthContext.Provider
             value={{
                 authenticated,
+                roles,
                 setAuthenticated,
                 checkLogin
             }}

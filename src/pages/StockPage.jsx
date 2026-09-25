@@ -10,6 +10,7 @@ import {
   createItemMaster,
   createStockLedger
 } from '../api/stock';
+import { useAuth } from '../auth/AuthContext';
 
 function normalizeStock(stock, index) {
   return {
@@ -19,6 +20,14 @@ function normalizeStock(stock, index) {
 }
 
 export default function StockPage() {
+  const auth = useAuth() || {};
+  const roles = Array.isArray(auth.roles) ? auth.roles : [];
+  const isAdmin = roles.includes('ADMIN');
+
+  useEffect(() => {
+    console.log('[StockPage] Roles fetched:', roles, 'isAdmin:', isAdmin);
+  }, [roles, isAdmin]);
+
   const [stocks, setStocks] = useState([]);
   const [sites, setSites] = useState([]);
   const [itemMasters, setItemMasters] = useState([]);
@@ -35,7 +44,8 @@ export default function StockPage() {
   const [createModal, setCreateModal] = useState(null);
   const [invalidateModal, setInvalidateModal] = useState(null);
   const [highlightedRowKey, setHighlightedRowKey] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [itemSearchTerm, setItemSearchTerm] = useState('');
+  const [siteSearchTerm, setSiteSearchTerm] = useState('');
   const [pullRefreshOffset, setPullRefreshOffset] = useState(0);
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
   const pullStartY = useRef(null);
@@ -219,6 +229,8 @@ export default function StockPage() {
   };
 
   const openSwapModal = (stock) => {
+    if (!isAdmin) return;
+
     if (swapLockActive || invalidateLockActive || Object.keys(editedStocks).length > 0) {
       showToast('Save pending changes before swapping another item.');
       return;
@@ -252,7 +264,7 @@ export default function StockPage() {
   };
 
   const handleSwapSubmit = () => {
-    if (!swapModal?.stock) return;
+    if (!isAdmin || !swapModal?.stock) return;
 
     const source = swapModal.stock;
     const targetQty = Number(swapModal.targetQty);
@@ -390,12 +402,14 @@ export default function StockPage() {
   };
 
   const openCreateModal = (defaults = {}) => {
+    if (!isAdmin) return;
+
     setCreateModal({
-      itemname: defaults.itemname || '',
+      itemname: (defaults.itemname || '').toUpperCase(),
       availablestock: defaults.availablestock ?? '',
       newqty: defaults.newqty ?? '',
       threshold: defaults.threshold ?? '',
-      unit: defaults.unit || '',
+      unit: (defaults.unit || '').toUpperCase(),
       siteid: defaults.siteid ?? defaults.inventorycode ?? 1,
       inventorycode: defaults.inventorycode ?? defaults.siteid ?? 1,
       existingStock: defaults.existingStock ?? null,
@@ -408,6 +422,8 @@ export default function StockPage() {
   };
 
   const openInvalidateModal = (stock) => {
+    if (!isAdmin) return;
+
     if (swapLockActive || invalidateLockActive || Object.keys(editedStocks).length > 0) {
       showToast('Save pending changes before invalidating another item.');
       return;
@@ -444,7 +460,7 @@ export default function StockPage() {
   };
 
   const handleInvalidateSubmit = () => {
-    if (!invalidateModal?.stock) return;
+    if (!isAdmin || !invalidateModal?.stock) return;
 
     const stock = invalidateModal.stock;
     const qty = Number(invalidateModal.qty);
@@ -576,29 +592,31 @@ export default function StockPage() {
   };
 
   const handleCreateChange = (field, value) => {
+    const normalizedValue = typeof value === 'string' ? value.toUpperCase() : value;
+
     setCreateModal((prev) => {
       if (!prev) return prev;
 
       if (field === 'itemname' || field === 'siteid') {
-        const nextItemName = field === 'itemname' ? value : prev.itemname;
-        const nextSiteId = field === 'siteid' ? value : prev.siteid;
+        const nextItemName = field === 'itemname' ? normalizedValue : prev.itemname;
+        const nextSiteId = field === 'siteid' ? normalizedValue : prev.siteid;
         const matchedSiteStock = getMatchingSiteStock(nextItemName, nextSiteId);
         const hasBothFieldsSelected = Boolean((nextItemName || '').trim()) && Boolean(nextSiteId && nextSiteId !== '');
 
         return {
           ...prev,
-          [field]: value,
+          [field]: normalizedValue,
           selectedExistingItem: hasBothFieldsSelected && Boolean(matchedSiteStock),
           availablestock: hasBothFieldsSelected && matchedSiteStock ? String(matchedSiteStock.siteqty ?? '') : prev.availablestock,
           threshold: hasBothFieldsSelected && matchedSiteStock ? String(matchedSiteStock.threshold ?? '') : prev.threshold,
           unit: hasBothFieldsSelected && matchedSiteStock ? matchedSiteStock.unit || '' : prev.unit,
           inventorycode: hasBothFieldsSelected && matchedSiteStock ? matchedSiteStock.inventorycode ?? 1 : prev.inventorycode,
-          showSuggestions: field === 'itemname' ? (value || '').trim().length > 0 : prev.showSuggestions,
+          showSuggestions: field === 'itemname' ? (normalizedValue || '').trim().length > 0 : prev.showSuggestions,
           error: ''
         };
       }
 
-      const next = { ...prev, [field]: value, error: '' };
+      const next = { ...prev, [field]: normalizedValue, error: '' };
       if (field === 'availablestock') {
         next.fieldError = '';
       }
@@ -607,7 +625,7 @@ export default function StockPage() {
   };
 
   const handleCreateSubmit = async () => {
-    if (!createModal) return;
+    if (!isAdmin || !createModal) return;
 
     const itemname = createModal.itemname.trim();
     const requestedQty = Number(createModal.newqty);
@@ -805,10 +823,18 @@ export default function StockPage() {
     }
   };
 
-  const normalizedSearch = searchTerm.trim().toLowerCase();
-  const visibleStocks = normalizedSearch.length >= 3
-    ? stocks.filter((stock) => (stock.itemname || '').toLowerCase().includes(normalizedSearch))
-    : stocks;
+  const normalizedItemSearch = itemSearchTerm.trim().toLowerCase();
+  const normalizedSiteSearch = siteSearchTerm.trim().toLowerCase();
+  const visibleStocks = stocks.filter((stock) => {
+    const matchesItem = normalizedItemSearch.length < 3
+      || (stock.itemname || '').toLowerCase().includes(normalizedItemSearch);
+    const site = sites.find((siteOption) => String(siteOption.siteid) === String(stock.inventorycode));
+    const siteName = stock.site || site?.sitename || '';
+    const matchesSite = normalizedSiteSearch.length < 3
+      || siteName.toLowerCase().includes(normalizedSiteSearch);
+
+    return matchesItem && matchesSite;
+  });
 
   const changedCount = Object.keys(editedStocks).length;
   const hasPendingTableChanges = swapLockActive || invalidateLockActive || changedCount > 0;
@@ -819,7 +845,7 @@ export default function StockPage() {
   return (
     <div className="stock-page-shell">
       <div className="stock-page-header">
-        <button type="button" className="icon-btn primary-icon-btn" onClick={() => openCreateModal()} aria-label="Create stock item">
+        <button type="button" className="icon-btn primary-icon-btn" onClick={() => openCreateModal()} disabled={!isAdmin} aria-label="Create stock item">
           +
         </button>
         <div className="stock-page-title">
@@ -846,12 +872,20 @@ export default function StockPage() {
       </div>
 
       <div className="stock-toolbar">
-        <input
-          type="text"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder="Search by item name"
-        />
+        <div className="stock-search-fields">
+          <input
+            type="text"
+            value={itemSearchTerm}
+            onChange={(e) => setItemSearchTerm(e.target.value)}
+            placeholder="Search by item name"
+          />
+          <input
+            type="text"
+            value={siteSearchTerm}
+            onChange={(e) => setSiteSearchTerm(e.target.value)}
+            placeholder="Search by site name"
+          />
+        </div>
       </div>
 
       {saveMessage ? <p className="form-message">{saveMessage}</p> : null}
@@ -910,10 +944,10 @@ export default function StockPage() {
                   </div>
                 </div>
                 <div className="stock-card-actions">
-                  <button type="button" className="icon-btn" onClick={() => openSwapModal(s)} disabled={hasPendingTableChanges}>
+                  <button type="button" className="icon-btn" onClick={() => openSwapModal(s)} disabled={!isAdmin || hasPendingTableChanges}>
                     ⇄
                   </button>
-                  <button type="button" className="icon-btn danger" onClick={() => openInvalidateModal(s)} disabled={hasPendingTableChanges}>
+                  <button type="button" className="icon-btn danger" onClick={() => openInvalidateModal(s)} disabled={!isAdmin || hasPendingTableChanges}>
                     ⛔
                   </button>
                 </div>

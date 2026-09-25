@@ -648,9 +648,15 @@ button:disabled {
   }
 }
 
-.stock-toolbar input {
+.stock-search-fields {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+}
+
+.stock-search-fields input {
   flex: 1;
-  min-width: 220px;
+  min-width: 0;
 }
 
 .stock-actions {

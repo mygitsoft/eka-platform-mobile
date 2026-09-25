@@ -70,6 +70,44 @@ function AppContainer() {
     }
   };
 
+  const loadContractors = async () => {
+    setLoadingEmployees(true);
+    setError('');
+
+    try {
+      const apiUrl = `${getApiBaseUrl()}/employee/contractors`;
+      const data = await fetchWithAuthJson(apiUrl);
+      const contractorData = Array.isArray(data) ? data : [];
+      setContractorOptions(contractorData.map((contractor) => ({
+        ...contractor,
+        employeeid: contractor.employeeid ?? contractor.contractorid ?? contractor.id,
+        employeename: contractor.employeename ?? contractor.contractorname ?? contractor.name
+      })));
+      setEmployees([]);
+    } catch (err) {
+      console.error('Failed to load contractors', err);
+      setError(err.message || String(err) || 'Unable to load contractors.');
+    } finally {
+      setLoadingEmployees(false);
+    }
+  };
+
+  const loadSites = async () => {
+    setLoadingSites(true);
+    setError('');
+
+    try {
+      const apiUrl = `${getApiBaseUrl()}/sites`;
+      const data = await fetchWithAuthJson(apiUrl);
+      setSites(data || []);
+    } catch (err) {
+      console.error('Failed to load sites', err);
+      setError(err.message || String(err) || 'Unable to load sites.');
+    } finally {
+      setLoadingSites(false);
+    }
+  };
+
   useEffect(() => {
     const nextAmount = calculateAttendanceAmount(rate, workingDays);
     setCalculatedAmount(nextAmount > 0 ? String(nextAmount) : '');
@@ -93,29 +131,6 @@ function AppContainer() {
   }, [selectedEmployeeId, employees]);
 
   useEffect(() => {
-    const loadContractors = async () => {
-      setLoadingEmployees(true);
-      setError('');
-
-      try {
-        const apiUrl = `${getApiBaseUrl()}/employee/contractors`;
-        console.log('Loading contractors from', apiUrl);
-        const data = await fetchWithAuthJson(apiUrl);
-        const contractorData = Array.isArray(data) ? data : [];
-        setContractorOptions(contractorData.map((contractor) => ({
-          ...contractor,
-          employeeid: contractor.employeeid ?? contractor.contractorid ?? contractor.id,
-          employeename: contractor.employeename ?? contractor.contractorname ?? contractor.name
-        })));
-        setEmployees([]);
-      } catch (err) {
-        console.error('Failed to load contractors', err);
-        setError(err.message || String(err) || 'Unable to load contractors.');
-      } finally {
-        setLoadingEmployees(false);
-      }
-    };
-
     loadContractors();
   }, []);
 
@@ -142,23 +157,6 @@ function AppContainer() {
   };
 
   useEffect(() => {
-    const loadSites = async () => {
-      setLoadingSites(true);
-      setError('');
-
-      try {
-        const apiUrl = `${getApiBaseUrl()}/sites`;
-        console.log('Loading sites from', apiUrl);
-        const data = await fetchWithAuthJson(apiUrl);
-        setSites(data || []);
-      } catch (err) {
-        console.error('Failed to load sites', err);
-        setError(err.message || String(err) || 'Unable to load sites.');
-      } finally {
-        setLoadingSites(false);
-      }
-    };
-
     loadSites();
   }, []);
 
@@ -253,6 +251,14 @@ function AppContainer() {
     setRate('');
     setWorkingDays('');
     setCalculatedAmount('');
+    setMessage('');
+    setError('');
+  };
+
+  const openAttendancePage = () => {
+    resetForm();
+    setActiveView('attendance');
+    setSidebarOpen(false);
   };
 
   const handleSubmit = async (event) => {
@@ -406,10 +412,7 @@ function AppContainer() {
           <button
             type="button"
             className={`nav-item ${activeView === 'attendance' ? 'active' : ''}`}
-            onClick={() => {
-              setActiveView('attendance');
-              setSidebarOpen(false);
-            }}
+            onClick={openAttendancePage}
           >
             Attendance
           </button>
@@ -488,6 +491,12 @@ function AppContainer() {
             error={error}
             handleSubmit={handleSubmit}
             resetForm={resetForm}
+            onRefresh={async () => {
+              await Promise.all([loadContractors(), loadSites()]);
+              if (contractorId) {
+                await loadEmployeesForContractor(contractorId);
+              }
+            }}
             onCancel={() => setActiveView('dashboard')}
           />
         ) : activeView === 'attendance-list' ? (

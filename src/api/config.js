@@ -1,4 +1,4 @@
-const DEFAULT_API_BASE_URL = 'https://considerations-crossing-south-holds.trycloudflare.com/api';
+const DEFAULT_API_BASE_URL = 'https://transmitted-signal-translations-mesa.trycloudflare.com/api';
 
 const normalizeApiBaseUrl = (value) => {
   const trimmed = value?.trim().replace(/\/+$/, '');

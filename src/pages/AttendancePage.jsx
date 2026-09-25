@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 function AttendancePage({
   employees,
@@ -34,11 +34,16 @@ function AttendancePage({
   error,
   handleSubmit,
   resetForm,
+  onRefresh,
   onCancel,
 }) {
   const [employeeSearch, setEmployeeSearch] = useState('');
   const [showEmployeeSuggestions, setShowEmployeeSuggestions] = useState(false);
   const [showContractorSuggestions, setShowContractorSuggestions] = useState(false);
+  const [pullRefreshOffset, setPullRefreshOffset] = useState(0);
+  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
+  const pullStartY = useRef(null);
+  const formRef = useRef(null);
   const today = new Date();
   const formatLocalDate = (date) => {
     const year = date.getFullYear();
@@ -92,6 +97,8 @@ function AttendancePage({
 
     if (selectedEmployee) {
       setEmployeeSearch(selectedEmployee.employeename || '');
+    } else if (!selectedEmployeeId) {
+      setEmployeeSearch('');
     }
   }, [selectedEmployeeId, employees]);
 
@@ -120,13 +127,62 @@ function AttendancePage({
     setShowContractorSuggestions(false);
   };
 
+  const handleRefresh = async () => {
+    if (isPullRefreshing || !onRefresh) return;
+    setIsPullRefreshing(true);
+    try {
+      await onRefresh();
+    } finally {
+      setIsPullRefreshing(false);
+      setPullRefreshOffset(0);
+    }
+  };
+
+  const handlePullStart = (event) => {
+    if (event.touches.length !== 1 || isPullRefreshing) return;
+    const form = formRef.current;
+    if (!form || form.scrollTop > 0) return;
+    pullStartY.current = event.touches[0].clientY;
+  };
+
+  const handlePullMove = (event) => {
+    if (pullStartY.current == null) return;
+    const delta = event.touches[0].clientY - pullStartY.current;
+    if (delta <= 0) return;
+    event.preventDefault();
+    setPullRefreshOffset(Math.min(delta, 90));
+  };
+
+  const handlePullEnd = async () => {
+    if (pullStartY.current == null) return;
+    pullStartY.current = null;
+    if (pullRefreshOffset >= 70) {
+      await handleRefresh();
+    } else {
+      setPullRefreshOffset(0);
+    }
+  };
+
   return (
     <div className="attendance-card">
       <p className="eyebrow">EKA Platform</p>
       <h1>Attendance Check-in</h1>
       <p className="subtitle">Create a daily attendance record for the selected employee.</p>
 
-      <form onSubmit={handleSubmit}>
+      <div
+        className={`pull-refresh-indicator ${isPullRefreshing || pullRefreshOffset > 0 ? 'visible' : ''}`}
+        style={{ height: `${Math.max(pullRefreshOffset, isPullRefreshing ? 48 : 0)}px` }}
+      >
+        {isPullRefreshing ? 'Refreshing...' : pullRefreshOffset >= 70 ? 'Release to refresh' : 'Pull to refresh'}
+      </div>
+
+      <form
+        ref={formRef}
+        onSubmit={handleSubmit}
+        onTouchStart={handlePullStart}
+        onTouchMove={handlePullMove}
+        onTouchEnd={handlePullEnd}
+      >
         <div className="field-group">
           <label htmlFor="attendanceDate">Date</label>
           <input
