@@ -1,7 +1,7 @@
 export const authConfig = {
 
     authority:
-        "https://infant-tvs-appreciation-maui.trycloudflare.com/realms/EnkonEngineering",
+        "https://auth.ekaplatform.com/realms/EnkonEngineering",
 
     clientId:
         "eka-mobile",
