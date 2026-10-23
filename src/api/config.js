@@ -1,4 +1,4 @@
-const DEFAULT_API_BASE_URL = 'https://enkonengineering.ekaplatform.com/api';
+const DEFAULT_API_BASE_URL = 'https://eclipse-mineral-towers-send.trycloudflare.com/api';
 
 const normalizeApiBaseUrl = (value) => {
   const trimmed = value?.trim().replace(/\/+$/, '');

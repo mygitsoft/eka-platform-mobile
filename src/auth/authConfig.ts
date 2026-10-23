@@ -1,7 +1,7 @@
 export const authConfig = {
 
     authority:
-        "https://auth.ekaplatform.com/realms/EnkonEngineering",
+        "https://proxy-language-commerce-carnival.trycloudflare.com/realms/EnkonEngineering",
 
     clientId:
         "eka-mobile",

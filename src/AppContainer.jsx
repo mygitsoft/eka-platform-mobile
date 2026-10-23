@@ -156,6 +156,23 @@ function AppContainer() {
     }
   };
 
+  const createEmployee = async (employee) => {
+    const createdEmployee = await fetchWithAuthJson(`${getApiBaseUrl()}/employee`, {
+      method: 'POST',
+      body: JSON.stringify({
+        ...employee,
+        contractor: Number(contractorId),
+      }),
+    });
+
+    await loadEmployeesForContractor(contractorId);
+    if (createdEmployee?.employeeid != null) {
+      setSelectedEmployeeId(String(createdEmployee.employeeid));
+    }
+    loadTotalEmployeeCount();
+    return createdEmployee;
+  };
+
   useEffect(() => {
     loadSites();
   }, []);
@@ -490,6 +507,7 @@ function AppContainer() {
             message={message}
             error={error}
             handleSubmit={handleSubmit}
+            onCreateEmployee={createEmployee}
             resetForm={resetForm}
             onRefresh={async () => {
               await Promise.all([loadContractors(), loadSites()]);

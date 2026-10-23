@@ -1043,6 +1043,47 @@ button:disabled {
   position: relative;
 }
 
+.employee-entry-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.employee-entry-row .dropdown-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.employee-add-btn {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #2563eb;
+  border-radius: 12px;
+  background: #2563eb;
+  color: #fff;
+  cursor: pointer;
+}
+
+.employee-add-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.employee-add-btn:disabled {
+  background: #cbd5e1;
+  border-color: #cbd5e1;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
 .autocomplete-dropdown {
   position: absolute;
   top: calc(100% + 4px);

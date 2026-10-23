@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { FiPlus, FiX } from 'react-icons/fi';
+import { getApiBaseUrl } from '../api/config';
+import { fetchWithAuthJson } from '../api/apiClient';
 
 function AttendancePage({
   employees,
@@ -33,6 +36,7 @@ function AttendancePage({
   message,
   error,
   handleSubmit,
+  onCreateEmployee,
   resetForm,
   onRefresh,
   onCancel,
@@ -40,10 +44,40 @@ function AttendancePage({
   const [employeeSearch, setEmployeeSearch] = useState('');
   const [showEmployeeSuggestions, setShowEmployeeSuggestions] = useState(false);
   const [showContractorSuggestions, setShowContractorSuggestions] = useState(false);
+  const [showEmployeeDialog, setShowEmployeeDialog] = useState(false);
+  const [employeeName, setEmployeeName] = useState('');
+  const [employeeDesignation, setEmployeeDesignation] = useState('');
+  const [employeeRate, setEmployeeRate] = useState('');
+  const [designationOptions, setDesignationOptions] = useState([]);
+  const [loadingDesignations, setLoadingDesignations] = useState(false);
+  const [savingEmployee, setSavingEmployee] = useState(false);
+  const [employeeDialogError, setEmployeeDialogError] = useState('');
   const [pullRefreshOffset, setPullRefreshOffset] = useState(0);
   const [isPullRefreshing, setIsPullRefreshing] = useState(false);
   const pullStartY = useRef(null);
   const formRef = useRef(null);
+
+  useEffect(() => {
+    if (!showEmployeeDialog) return undefined;
+
+    let cancelled = false;
+    setLoadingDesignations(true);
+    setEmployeeDialogError('');
+    fetchWithAuthJson(`${getApiBaseUrl()}/designations`)
+      .then((data) => {
+        if (!cancelled) setDesignationOptions(Array.isArray(data) ? data : []);
+      })
+      .catch((err) => {
+        if (!cancelled) setEmployeeDialogError(err.message || 'Unable to load designations.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingDesignations(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showEmployeeDialog]);
   const today = new Date();
   const formatLocalDate = (date) => {
     const year = date.getFullYear();
@@ -125,6 +159,35 @@ function AttendancePage({
     setEmployeeSearch('');
     loadEmployeesForContractor(employee.employeeid);
     setShowContractorSuggestions(false);
+  };
+
+  const handleCreateEmployee = async (event) => {
+    event.preventDefault();
+    const trimmedName = employeeName.trim();
+    const numericRate = Number(employeeRate);
+
+    if (!trimmedName || !employeeDesignation || !Number.isFinite(numericRate) || numericRate <= 0) {
+      setEmployeeDialogError('Enter an employee name, designation, and a rate greater than 0.');
+      return;
+    }
+
+    setSavingEmployee(true);
+    setEmployeeDialogError('');
+    try {
+      await onCreateEmployee({
+        employeename: trimmedName,
+        designation: employeeDesignation,
+        rate: numericRate,
+      });
+      setShowEmployeeDialog(false);
+      setEmployeeName('');
+      setEmployeeDesignation('');
+      setEmployeeRate('');
+    } catch (err) {
+      setEmployeeDialogError(err.message || 'Unable to create employee.');
+    } finally {
+      setSavingEmployee(false);
+    }
   };
 
   const handleRefresh = async () => {
@@ -256,39 +319,51 @@ function AttendancePage({
 
         <div className="field-group">
           <label htmlFor="employee">Select employee</label>
-          <div className="dropdown-field">
-            <input
-              id="employee"
-              type="text"
-              value={employeeSearch}
-              onChange={(event) => {
-                setEmployeeSearch(event.target.value);
-                setShowEmployeeSuggestions(true);
-              }}
-              onFocus={() => setShowEmployeeSuggestions(true)}
-              onBlur={() => {
-                window.setTimeout(() => setShowEmployeeSuggestions(false), 100);
-              }}
-              disabled={!contractorId || loadingEmployees}
-              autoComplete="off"
-              placeholder={!contractorId ? 'Choose contractor first' : loadingEmployees ? 'Loading employees...' : 'Choose employee'}
-            />
-            {showEmployeeSuggestions && employeeSuggestions.length > 0 ? (
-              <ul className="autocomplete-dropdown">
-                {employeeSuggestions.map((employee) => (
-                  <li key={employee.employeeid}>
-                    <button
-                      type="button"
-                      className="autocomplete-item"
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => handleEmployeeSuggestionClick(employee)}
-                    >
-                      <span>{formatEmployeeLabel(employee)}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
+          <div className="employee-entry-row">
+            <div className="dropdown-field">
+              <input
+                id="employee"
+                type="text"
+                value={employeeSearch}
+                onChange={(event) => {
+                  setEmployeeSearch(event.target.value);
+                  setShowEmployeeSuggestions(true);
+                }}
+                onFocus={() => setShowEmployeeSuggestions(true)}
+                onBlur={() => {
+                  window.setTimeout(() => setShowEmployeeSuggestions(false), 100);
+                }}
+                disabled={!contractorId || loadingEmployees}
+                autoComplete="off"
+                placeholder={!contractorId ? 'Choose contractor first' : loadingEmployees ? 'Loading employees...' : 'Choose employee'}
+              />
+              {showEmployeeSuggestions && employeeSuggestions.length > 0 ? (
+                <ul className="autocomplete-dropdown">
+                  {employeeSuggestions.map((employee) => (
+                    <li key={employee.employeeid}>
+                      <button
+                        type="button"
+                        className="autocomplete-item"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => handleEmployeeSuggestionClick(employee)}
+                      >
+                        <span>{formatEmployeeLabel(employee)}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              className="employee-add-btn"
+              aria-label="Create employee"
+              title={contractorId ? 'Create employee' : 'Choose a contractor first'}
+              disabled={!contractorId}
+              onClick={() => setShowEmployeeDialog(true)}
+            >
+              <FiPlus aria-hidden="true" />
+            </button>
           </div>
         </div>
 
@@ -359,6 +434,76 @@ function AttendancePage({
           </button>
         </div>
       </form>
+
+      {showEmployeeDialog ? (
+        <div className="modal-backdrop" onMouseDown={(event) => {
+          if (event.target === event.currentTarget && !savingEmployee) setShowEmployeeDialog(false);
+        }}>
+          <form className="modal-card" role="dialog" aria-modal="true" aria-labelledby="create-employee-title" onSubmit={handleCreateEmployee}>
+            <div className="modal-header">
+              <h3 id="create-employee-title">Create employee</h3>
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label="Close dialog"
+                disabled={savingEmployee}
+                onClick={() => setShowEmployeeDialog(false)}
+              >
+                <FiX aria-hidden="true" />
+              </button>
+            </div>
+            <label htmlFor="newEmployeeName">
+              Employee Name
+              <input
+                id="newEmployeeName"
+                type="text"
+                value={employeeName}
+                onChange={(event) => setEmployeeName(event.target.value)}
+                autoComplete="off"
+                required
+              />
+            </label>
+            <label htmlFor="newEmployeeDesignation">
+              Designation
+              <select
+                id="newEmployeeDesignation"
+                value={employeeDesignation}
+                onChange={(event) => setEmployeeDesignation(event.target.value)}
+                disabled={loadingDesignations || designationOptions.length === 0}
+                required
+              >
+                <option value="">{loadingDesignations ? 'Loading designations...' : 'Choose designation'}</option>
+                {designationOptions.map((option) => (
+                  <option key={option.desigcode} value={option.desigcode}>
+                    {option.designationdesc || option.desigcode}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label htmlFor="newEmployeeRate">
+              Rate
+              <input
+                id="newEmployeeRate"
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={employeeRate}
+                onChange={(event) => setEmployeeRate(event.target.value)}
+                required
+              />
+            </label>
+            {employeeDialogError ? <p className="form-error" role="alert">{employeeDialogError}</p> : null}
+            <div className="modal-actions">
+              <button type="button" className="secondary-btn" disabled={savingEmployee} onClick={() => setShowEmployeeDialog(false)}>
+                Cancel
+              </button>
+              <button type="submit" className="primary-btn" disabled={savingEmployee || loadingDesignations || designationOptions.length === 0}>
+                {savingEmployee ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
 
       {message ? (
         <div className="toast toast-success" role="status">
