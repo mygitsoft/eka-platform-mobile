@@ -9,8 +9,9 @@ import AttendanceListPage from './pages/AttendanceListPage';
 import StockPage from './pages/StockPage';
 import OrdersPage from './pages/OrdersPage';
 import PurchaseInvoicePage from './pages/PurchaseInvoicePage';
+import ProfilePage from './pages/ProfilePage';
 import { getApiBaseUrl } from './api/config';
-import { fetchWithAuthJson, fetchWithAuth } from './api/apiClient';
+import { fetchWithAuthJson } from './api/apiClient';
 import { calculateAttendanceAmount, getContractorOptions, validateAttendanceDate, validateAttendanceFields } from './utils/attendanceValidation';
 import { FiLogOut, FiUser } from 'react-icons/fi';
 import { logout } from './auth/authService';
@@ -28,6 +29,53 @@ const getDefaultTimeValue = () => {
   const hours = String(date.getHours()).padStart(2, '0');
   const minutes = String(date.getMinutes()).padStart(2, '0');
   return `${hours}:${minutes}`;
+};
+
+const getResponseField = (value, names) => {
+  if (!value || typeof value !== 'object') return undefined;
+  for (const name of names) {
+    const key = Object.keys(value).find((candidate) => candidate.toLowerCase() === name.toLowerCase());
+    if (key && value[key] !== null && value[key] !== undefined && value[key] !== '') {
+      return value[key];
+    }
+  }
+  return undefined;
+};
+
+const getMeUser = (response) => response?.user || response?.data?.user || response?.data || response;
+
+const getUsername = (response) => getResponseField(getMeUser(response), [
+  'username',
+  'preferred_username',
+]);
+
+const getHospitalId = (response) => getResponseField(getMeUser(response), [
+  'hospitalid',
+  'hospitalId',
+]);
+
+const getHospitalRecords = (response) => {
+  if (Array.isArray(response)) return response;
+  if (Array.isArray(response?.data)) return response.data;
+  return [];
+};
+
+const assignHospital = async (hospitalId) => {
+  const response = await fetchWithAuthJson(`${getApiBaseUrl()}/auth/hospital`, {
+    method: 'POST',
+    body: JSON.stringify({ hospitalId: Number(hospitalId) }),
+  });
+  return response.hospitalId;
+};
+
+const fetchPatientsForHospital = async (hospitalId) => {
+  const response = await fetchWithAuthJson(
+    `${getApiBaseUrl()}/patients/hospital/${encodeURIComponent(hospitalId)}`,
+  );
+  if (!Array.isArray(response)) {
+    throw new Error('The hospital patients endpoint returned an invalid response.');
+  }
+  return response;
 };
 
 function AppContainer() {
@@ -60,8 +108,122 @@ function AppContainer() {
   const [loadingTotalEmployeeCount, setLoadingTotalEmployeeCount] = useState(true);
   const [activeView, setActiveView] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
-   const [loggingOut, setLoggingOut] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [authMeResponse, setAuthMeResponse] = useState(null);
+  const [authMeError, setAuthMeError] = useState('');
+  const [loadingAuthMe, setLoadingAuthMe] = useState(true);
+  const [hospitalOptions, setHospitalOptions] = useState([]);
+  const [selectedHospitalId, setSelectedHospitalId] = useState('');
+  const [showHospitalDialog, setShowHospitalDialog] = useState(false);
+  const [loadingHospitals, setLoadingHospitals] = useState(false);
+  const [savingHospital, setSavingHospital] = useState(false);
+  const [hospitalDialogError, setHospitalDialogError] = useState('');
+  const [patients, setPatients] = useState([]);
+  const [loadingPatients, setLoadingPatients] = useState(false);
+  const [patientsError, setPatientsError] = useState('');
   const contractorOptions = getContractorOptions(employees);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadUserContext = async () => {
+      setLoadingAuthMe(true);
+      setAuthMeError('');
+
+      try {
+        const response = await fetchWithAuthJson(`${getApiBaseUrl()}/auth/me`);
+        if (cancelled) return;
+        setAuthMeResponse(response);
+
+        const username = getUsername(response);
+        if (!username) {
+          throw new Error('The /auth/me response does not include a username.');
+        }
+
+        const hospitalId = getHospitalId(response);
+        if (hospitalId === undefined) {
+          setShowHospitalDialog(true);
+          setLoadingHospitals(true);
+          try {
+            const hospitalsResponse = await fetchWithAuthJson(`${getApiBaseUrl()}/auth/hospitals`);
+            if (!cancelled) {
+              setHospitalOptions(getHospitalRecords(hospitalsResponse));
+            }
+          } catch (err) {
+            if (!cancelled) {
+              setHospitalDialogError(err.message || 'Unable to load hospitals.');
+            }
+          } finally {
+            if (!cancelled) setLoadingHospitals(false);
+          }
+          return;
+        }
+
+        setSelectedHospitalId(String(hospitalId));
+        setLoadingPatients(true);
+        setPatientsError('');
+        try {
+          const hospitalPatients = await fetchPatientsForHospital(hospitalId);
+          if (!cancelled) setPatients(hospitalPatients);
+        } catch (err) {
+          if (!cancelled) setPatientsError(err.message || 'Unable to load patients.');
+        } finally {
+          if (!cancelled) setLoadingPatients(false);
+        }
+      } catch (err) {
+        if (!cancelled) setAuthMeError(err.message || 'Unable to load the signed-in user.');
+      } finally {
+        if (!cancelled) setLoadingAuthMe(false);
+      }
+    };
+
+    loadUserContext();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleHospitalSelection = async () => {
+    if (!selectedHospitalId) {
+      setHospitalDialogError('Please select a hospital.');
+      return;
+    }
+
+    const username = getUsername(authMeResponse);
+    if (!username) {
+      setHospitalDialogError('Unable to determine the signed-in username.');
+      return;
+    }
+
+    setSavingHospital(true);
+    setHospitalDialogError('');
+    setPatientsError('');
+
+    let hospitalId;
+    try {
+      hospitalId = await assignHospital(selectedHospitalId);
+      if (!hospitalId) {
+        throw new Error('The hospital assignment response did not include a hospitalId.');
+      }
+      setSelectedHospitalId(String(hospitalId));
+      setShowHospitalDialog(false);
+    } catch (err) {
+      setHospitalDialogError(err.message || 'Unable to assign the hospital.');
+      setSavingHospital(false);
+      return;
+    }
+
+    setLoadingPatients(true);
+    try {
+      const hospitalPatients = await fetchPatientsForHospital(hospitalId);
+      setPatients(hospitalPatients);
+    } catch (err) {
+      setPatientsError(err.message || 'Unable to load patients.');
+    } finally {
+      setSavingHospital(false);
+      setLoadingPatients(false);
+    }
+  };
 
 
   const handleLogout = async () => {
@@ -348,7 +510,12 @@ function AppContainer() {
         </div>
 
         <div className="header-actions">
-          <button type="button" className="header-action-btn" aria-label="Profile">
+          <button
+            type="button"
+            className="header-action-btn"
+            onClick={() => setActiveView('profile')}
+            aria-label="Profile"
+          >
             <FiUser aria-hidden="true" />
             <span>Profile</span>
           </button>
@@ -447,6 +614,15 @@ function AppContainer() {
             loadingTodayCount={loadingTodayCount}
             totalEmployeeCount={totalEmployeeCount}
             loadingTotalEmployeeCount={loadingTotalEmployeeCount}
+            authMeResponse={authMeResponse}
+            loadingAuthMe={loadingAuthMe}
+            authMeError={authMeError}
+          />
+        ) : activeView === 'profile' ? (
+          <ProfilePage
+            patients={patients}
+            loading={loadingAuthMe || loadingPatients}
+            error={authMeError || patientsError}
           />
         ) : activeView === 'attendance' ? (
           <AttendancePage
@@ -500,6 +676,63 @@ function AppContainer() {
           <StockPage />
         )}
       </main>
+
+      {showHospitalDialog && (
+        <div className="modal-backdrop hospital-dialog-backdrop">
+          <div
+            className="modal-card hospital-dialog-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="hospital-dialog-title"
+          >
+            <div className="modal-header">
+              <h3 id="hospital-dialog-title">Select your hospital</h3>
+            </div>
+            <p className="hospital-dialog-description">
+              Your account is not associated with a hospital yet. Select one to continue.
+            </p>
+            <label>
+              <span>Hospital</span>
+              <select
+                value={selectedHospitalId}
+                onChange={(event) => {
+                  setSelectedHospitalId(event.target.value);
+                  setHospitalDialogError('');
+                }}
+                disabled={loadingHospitals || savingHospital}
+              >
+                <option value="">
+                  {loadingHospitals ? 'Loading hospitals…' : 'Select a hospital'}
+                </option>
+                {hospitalOptions.map((hospital, index) => {
+                  const id = getResponseField(hospital, ['hospitalId']);
+                  const name = getResponseField(hospital, ['hospitalName']);
+                  if (id === undefined) return null;
+                  return (
+                    <option key={String(id) || index} value={String(id)}>
+                      {name || `Hospital ${id}`}
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+            {hospitalDialogError ? <p className="error-text">{hospitalDialogError}</p> : null}
+            {!loadingHospitals && hospitalOptions.length === 0 && !hospitalDialogError ? (
+              <p className="error-text">No hospitals are available to select.</p>
+            ) : null}
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="primary-btn"
+                onClick={handleHospitalSelection}
+                disabled={loadingHospitals || savingHospital || hospitalOptions.length === 0}
+              >
+                {savingHospital ? 'Saving…' : 'Continue'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -11,7 +11,7 @@ export async function fetchWithAuth(url, options = {}) {
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
-  console.log("FETCHING ", options.method || 'GET', url, "with headers", headers);
+  console.log("FETCHING ", options.method || 'GET', url);
   return fetch(url, {
     ...options,
     headers,
@@ -36,7 +36,7 @@ export async function fetchWithAuthFormData(url, options = {}) {
     headers.Authorization = `Bearer ${token}`;
   }
 
-  console.log("FETCHING ", options.method || 'GET', url, "with headers", headers);
+  console.log("FETCHING ", options.method || 'GET', url);
   const response = await fetch(url, {
     ...options,
     headers,

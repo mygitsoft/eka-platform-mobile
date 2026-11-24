@@ -1,4 +1,4 @@
-const DEFAULT_API_BASE_URL = 'https://catch-bridges-november-bottle.trycloudflare.com/api';
+const DEFAULT_API_BASE_URL = 'https://kelkoo-conducted-testimonials-lloyd.trycloudflare.com/api';
 
 const normalizeApiBaseUrl = (value) => {
   const trimmed = value?.trim().replace(/\/+$/, '');

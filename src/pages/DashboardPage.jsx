@@ -6,7 +6,15 @@ import {
   fetchZeroStockItems,
 } from '../api/stock';
 
-function DashboardPage({ todayCount, loadingTodayCount, totalEmployeeCount, loadingTotalEmployeeCount }) {
+function DashboardPage({
+  todayCount,
+  loadingTodayCount,
+  totalEmployeeCount,
+  loadingTotalEmployeeCount,
+  authMeResponse,
+  loadingAuthMe,
+  authMeError,
+}) {
   const [lowStockCount, setLowStockCount] = useState(0);
   const [zeroStockCount, setZeroStockCount] = useState(0);
   const [oldStockCount, setOldStockCount] = useState(0);
@@ -157,6 +165,17 @@ function DashboardPage({ todayCount, loadingTodayCount, totalEmployeeCount, load
       </div>
 
       {stockError ? <p className="error-text">{stockError}</p> : null}
+
+      <section className="auth-response-card" aria-labelledby="auth-response-title">
+        <h2 id="auth-response-title">/api/auth/me response</h2>
+        {loadingAuthMe ? (
+          <p>Loading…</p>
+        ) : authMeError ? (
+          <p className="error-text">{authMeError}</p>
+        ) : (
+          <pre>{JSON.stringify(authMeResponse, null, 2) ?? String(authMeResponse)}</pre>
+        )}
+      </section>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 export const authConfig = {
 
     authority:
-        "https://operator-critics-settle-peers.trycloudflare.com/realms/ekaplatform",
+        "https://auth.ekaplatform.com/realms/Medicals-Demo",
 
     clientId:
         "eka-mobile",
